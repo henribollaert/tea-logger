@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { PlusCircle, Clock, Menu, X } from 'lucide-react';
+import { PlusCircle, Clock, Menu, X, ChevronDown } from 'lucide-react';
 import './TeaLogger.css';
 import { fetchSessions, createSession, getSyncStatus, forceSync } from '../api';
 
@@ -20,6 +20,15 @@ const KNOWN_VENDORS = {
   'teamania': 'Teamania',
 };
 
+// Example suggestions
+const SUGGESTED_TEAS = [
+  { name: "White2Tea Hot Brandy", tag: "Black" },
+  { name: "Yunnan Sourcing Impression", tag: "Sheng Puer" },
+  { name: "Crimson Lotus Slumbering Dragon", tag: "Shu Puer" },
+  { name: "Bitterleaf Year of the Rat", tag: "White" },
+  { name: "Essence of Tea 2018 Guafengzhai", tag: "Sheng Puer" }
+];
+
 const TeaLogger = () => {
   const [sessions, setSessions] = useState([]);
   const [currentTea, setCurrentTea] = useState('');
@@ -29,6 +38,8 @@ const TeaLogger = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState(null);
   const [notification, setNotification] = useState('');
+  const [showAllSessions, setShowAllSessions] = useState(false);
+  const inputRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -176,16 +187,23 @@ const TeaLogger = () => {
     setIsDrawerOpen(!isDrawerOpen);
   };
 
+  const handleSuggestionClick = (teaName) => {
+    setCurrentTea(teaName);
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Header */}
       <header className="app-header">
         <div className="header-container">
           <button onClick={toggleDrawer} className="icon-button">
-            {isDrawerOpen ? <X size={24} /> : <Menu size={24} />}
+            {isDrawerOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
           <h1 className="app-title">Tea Logger</h1>
-          <div className="spacer"></div> {/* Spacer for alignment */}
+          <div className="spacer"></div>
         </div>
       </header>
       
@@ -198,56 +216,56 @@ const TeaLogger = () => {
           </div>
         )}
         
-        {/* Quick Add Bar */}
-        <div className="quick-add-container">
-          <div className="input-group">
-            <div className="input-wrapper">
-              <input
-                type="text"
-                className="text-input"
-                placeholder="What tea are you drinking now? (e.g. w2t Hot Brandy 2019)"
-                value={currentTea}
-                onChange={(e) => {
-                  setCurrentTea(e.target.value);
-                  setShowSuggestions(e.target.value.length > 0);
-                }}
-                onKeyPress={(e) => e.key === 'Enter' && startNewSession()}
-                onFocus={() => setShowSuggestions(currentTea.length > 0)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-              />
-              
-              {/* Tea Suggestions */}
-              {showSuggestions && recentTeas.length > 0 && (
-                <div className="suggestions-container">
-                  {recentTeas
-                    .filter(tea => tea.toLowerCase().includes(currentTea.toLowerCase()))
-                    .map((tea, index) => (
-                      <div
-                        key={index}
-                        className="suggestion-item"
-                        onClick={() => {
-                          setCurrentTea(tea);
-                          setShowSuggestions(false);
-                        }}
-                      >
-                        {tea}
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
+        {/* Hero Section with Quick Add */}
+        <div className="hero-section">
+          <div className="input-container">
+            <input
+              ref={inputRef}
+              type="text"
+              className="hero-input"
+              placeholder="What tea are you drinking now? (e.g. w2t Hot Brandy 2019)"
+              value={currentTea}
+              onChange={(e) => {
+                setCurrentTea(e.target.value);
+                setShowSuggestions(e.target.value.length > 0);
+              }}
+              onKeyPress={(e) => e.key === 'Enter' && startNewSession()}
+            />
             <button
               onClick={startNewSession}
-              className="add-button"
+              className="hero-button"
+              aria-label="Add tea session"
             >
-              <PlusCircle size={24} />
+              <PlusCircle size={20} />
             </button>
+          </div>
+          
+          {/* Suggestions */}
+          <div className="suggestions-grid">
+            {SUGGESTED_TEAS.map((tea, index) => (
+              <div 
+                key={index} 
+                className="suggestion-chip"
+                onClick={() => handleSuggestionClick(tea.name)}
+              >
+                <span className="suggestion-name">{tea.name}</span>
+                <span className="suggestion-tag">{tea.tag}</span>
+              </div>
+            ))}
           </div>
         </div>
         
-        {/* Sessions List */}
-        <div className="sessions-list">
-          <h2 className="section-title">Recent Sessions</h2>
+        {/* Recent Sessions Limited View */}
+        <div className="recent-sessions-section">
+          <div className="section-header">
+            <h2 className="section-title">Recent Sessions</h2>
+            <button 
+              className="view-toggle"
+              onClick={() => setShowAllSessions(!showAllSessions)}
+            >
+              {showAllSessions ? 'Show Less' : 'Show More'}
+            </button>
+          </div>
           
           {isLoading ? (
             <div className="loading-state">Loading sessions...</div>
@@ -256,29 +274,44 @@ const TeaLogger = () => {
               No tea sessions recorded yet. Start by adding one above!
             </div>
           ) : (
-            sessions.map(session => (
-              <div 
-                key={session.id} 
-                className="session-card"
-                onClick={() => navigate(`/session/${session.id}`)}
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="session-header">
-                  <div>
-                    <h3 className="session-title">{session.name}</h3>
-                    {session.vendor && <p className="session-detail">{session.vendor}</p>}
-                    {session.type && <p className="session-detail">{session.type}</p>}
+            <div className="sessions-list">
+              {(showAllSessions ? sessions : sessions.slice(0, 2)).map(session => (
+                <div 
+                  key={session.id} 
+                  className="session-card"
+                  onClick={() => navigate(`/session/${session.id}`)}
+                >
+                  <div className="session-header">
+                    <div>
+                      <h3 className="session-title">{session.name}</h3>
+                      <div className="session-meta">
+                        {session.vendor && <span className="session-vendor">{session.vendor}</span>}
+                        {session.type && <span className="session-type">{session.type}</span>}
+                      </div>
+                    </div>
+                    <div className="session-timestamp">
+                      <Clock size={12} className="timestamp-icon" />
+                      {new Date(session.timestamp).toLocaleDateString()}
+                    </div>
                   </div>
-                  <div className="session-timestamp">
-                    <Clock size={14} className="timestamp-icon" />
-                    {new Date(session.timestamp).toLocaleDateString()}
-                  </div>
+                  {session.notes && (
+                    <p className="session-notes">{session.notes}</p>
+                  )}
                 </div>
-                {session.notes && (
-                  <p className="session-notes">{session.notes}</p>
-                )}
-              </div>
-            ))
+              ))}
+              
+              {/* Scroll indicator */}
+              {!showAllSessions && sessions.length > 2 && (
+                <button 
+                  className="scroll-indicator"
+                  onClick={() => setShowAllSessions(true)}
+                  aria-label="Show more sessions"
+                >
+                  <ChevronDown size={20} />
+                  <span>Scroll for more</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
       </main>
