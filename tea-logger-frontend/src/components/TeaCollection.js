@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, X, Plus, Edit, Trash, Save } from 'lucide-react';
+import { ArrowLeft, Search, X, Plus, Trash, Clock } from 'lucide-react';
 import { fetchSessions } from '../api';
 import './TeaCollection.css';
 
@@ -17,6 +17,7 @@ const TeaCollection = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [teaToDelete, setTeaToDelete] = useState(null);
   const [notification, setNotification] = useState('');
+  const [expandedTea, setExpandedTea] = useState(null);
   const [newTea, setNewTea] = useState({
     id: null,
     name: '',
@@ -47,11 +48,17 @@ const TeaCollection = () => {
               year: session.age || '',
               notes: session.notes || '',
               sessionCount: 1,
-              lastBrewed: session.timestamp
+              lastBrewed: session.timestamp,
+              sessions: [session]
             });
           } else {
             const tea = teaMap.get(key);
             tea.sessionCount += 1;
+            tea.sessions.push(session);
+            
+            // Sort sessions by timestamp (newest first)
+            tea.sessions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
             if (new Date(session.timestamp) > new Date(tea.lastBrewed)) {
               tea.lastBrewed = session.timestamp;
             }
@@ -119,7 +126,8 @@ const TeaCollection = () => {
         ...newTea,
         id: Date.now(), // Generate a unique ID
         sessionCount: 0,
-        lastBrewed: null
+        lastBrewed: null,
+        sessions: []
       }
     ];
     
@@ -188,7 +196,8 @@ const TeaCollection = () => {
     });
   };
 
-  const handleDeleteClick = (tea) => {
+  const handleDeleteClick = (e, tea) => {
+    e.stopPropagation(); // Prevent triggering the card click
     setTeaToDelete(tea);
     setShowDeleteConfirm(true);
   };
@@ -204,6 +213,19 @@ const TeaCollection = () => {
     setTimeout(() => setNotification(''), 3000);
   };
 
+  const toggleSessionHistory = (teaId) => {
+    if (expandedTea === teaId) {
+      setExpandedTea(null);
+    } else {
+      setExpandedTea(teaId);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString();
+  };
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -211,7 +233,9 @@ const TeaCollection = () => {
           <button onClick={() => navigate(-1)} className="icon-button">
             <ArrowLeft size={20} />
           </button>
-          <h1 className="app-title">Tea Collection</h1>
+          <h1 className="app-title" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
+            Tea Logger
+          </h1>
           <button 
             onClick={() => {
               setIsAddingTea(!isAddingTea);
@@ -380,42 +404,85 @@ const TeaCollection = () => {
             </div>
           ) : (
             filteredTeas.map(tea => (
-              <div 
-                key={tea.id} 
-                className="tea-card"
-                onClick={() => handleEditTea(tea)}
-              >
-                <div className="tea-info">
-                  <h3 className="tea-name">{tea.name}</h3>
-                  <div className="tea-details">
-                    {tea.type && <span className="tea-tag">{tea.type}</span>}
-                    {tea.vendor && <span className="tea-tag">{tea.vendor}</span>}
-                    {tea.year && <span className="tea-tag">{tea.year}</span>}
-                  </div>
-                  {tea.sessionCount > 0 && (
-                    <div className="tea-stats">
-                      <span className="session-count">{tea.sessionCount} session{tea.sessionCount !== 1 ? 's' : ''}</span>
-                      {tea.lastBrewed && (
-                        <span className="last-brewed">
-                          Last brewed: {new Date(tea.lastBrewed).toLocaleDateString()}
-                        </span>
-                      )}
+              <div key={tea.id} className="tea-card">
+                <div 
+                  className="tea-card-main"
+                  onClick={() => {
+                    if (!expandedTea) {
+                      handleEditTea(tea);
+                    } else {
+                      toggleSessionHistory(tea.id);
+                    }
+                  }}
+                >
+                  <div className="tea-info">
+                    <h3 className="tea-name">{tea.name}</h3>
+                    <div className="tea-details">
+                      {tea.type && <span className="tea-tag">{tea.type}</span>}
+                      {tea.vendor && <span className="tea-tag">{tea.vendor}</span>}
+                      {tea.year && <span className="tea-tag">{tea.year}</span>}
                     </div>
-                  )}
-                  {tea.notes && <p className="tea-notes">{tea.notes}</p>}
+                    {tea.sessionCount > 0 && (
+                      <div className="tea-stats">
+                        <span 
+                          className="session-count"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSessionHistory(tea.id);
+                          }}
+                        >
+                          {tea.sessionCount} session{tea.sessionCount !== 1 ? 's' : ''}
+                        </span>
+                        {tea.lastBrewed && (
+                          <span className="last-brewed">
+                            Last brewed: {formatDate(tea.lastBrewed)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {tea.notes && <p className="tea-notes">{tea.notes}</p>}
+                  </div>
+                  <div className="tea-actions">
+                    <button 
+                      className="action-button delete-button" 
+                      onClick={(e) => handleDeleteClick(e, tea)}
+                      aria-label="Delete tea"
+                    >
+                      <Trash size={16} />
+                    </button>
+                  </div>
                 </div>
-                <div className="tea-actions">
-                  <button 
-                    className="action-button delete-button" 
-                    onClick={(e) => {
-                      e.stopPropagation(); // Prevent triggering the card click
-                      handleDeleteClick(tea);
-                    }}
-                    aria-label="Delete tea"
-                  >
-                    <Trash size={16} />
-                  </button>
-                </div>
+                
+                {/* Session History */}
+                {expandedTea === tea.id && (
+                  <div className="session-history">
+                    <h4 className="history-title">Brewing History</h4>
+                    {tea.sessions && tea.sessions.length > 0 ? (
+                      <div className="session-list">
+                        {tea.sessions.map(session => (
+                          <div 
+                            key={session.id} 
+                            className="history-session"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/session/${session.id}`);
+                            }}
+                          >
+                            <div className="session-date">
+                              <Clock size={12} />
+                              <span>{formatDate(session.timestamp)}</span>
+                            </div>
+                            {session.notes && (
+                              <p className="session-history-notes">{session.notes}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="empty-history">No brewing sessions recorded yet.</p>
+                    )}
+                  </div>
+                )}
               </div>
             ))
           )}

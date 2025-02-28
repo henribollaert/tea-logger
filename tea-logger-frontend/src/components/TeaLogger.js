@@ -118,14 +118,30 @@ const TeaLogger = () => {
       age: ''
     };
 
+    // Load vendor aliases from localStorage
+    let vendorAliases = {};
+    const storedVendors = localStorage.getItem('teaVendors');
+    
+    if (storedVendors) {
+      const vendors = JSON.parse(storedVendors);
+      vendors.forEach(vendor => {
+        vendor.aliases.forEach(alias => {
+          vendorAliases[alias.toLowerCase()] = vendor.name;
+        });
+      });
+    } else {
+      // Fallback to hardcoded vendors
+      vendorAliases = KNOWN_VENDORS;
+    }
+
     // Break input into tokens
     const tokens = input.trim().split(/\s+/);
     
     // Check for known vendors at the beginning
     if (tokens.length > 0) {
       const firstToken = tokens[0].toLowerCase();
-      if (KNOWN_VENDORS[firstToken]) {
-        result.vendor = KNOWN_VENDORS[firstToken];
+      if (vendorAliases[firstToken]) {
+        result.vendor = vendorAliases[firstToken];
         tokens.shift(); // Remove the vendor token
       }
     }
@@ -337,6 +353,7 @@ const TeaLogger = () => {
                 <li><a href="/" className="menu-item">Home</a></li>
                 <li><a onClick={() => navigate('/sessions')} className="menu-item">All Sessions</a></li>
                 <li><a onClick={() => navigate('/collection')} className="menu-item">Tea Collection</a></li>
+                <li><a onClick={() => navigate('/vendors')} className="menu-item">Vendors</a></li>
                 <li><a onClick={() => navigate('/settings')} className="menu-item">Settings</a></li>
               </ul>
             </nav>
