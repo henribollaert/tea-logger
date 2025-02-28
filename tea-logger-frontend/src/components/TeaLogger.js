@@ -60,7 +60,13 @@ const TeaLogger = () => {
       setIsLoading(true);
       try {
         const data = await fetchSessions();
-        setSessions(data);
+        
+        // Sort sessions by timestamp, most recent first
+        const sortedData = [...data].sort((a, b) => 
+          new Date(b.timestamp) - new Date(a.timestamp)
+        );
+        
+        setSessions(sortedData);
         
         // Extract unique tea names for suggestions
         const teas = data.map(session => session.name);
@@ -229,7 +235,7 @@ const TeaLogger = () => {
                 setCurrentTea(e.target.value);
                 setShowSuggestions(e.target.value.length > 0);
               }}
-              onKeyPress={(e) => e.key === 'Enter' && startNewSession()}
+              onKeyDown={(e) => e.key === 'Enter' && startNewSession()}
             />
             <button
               onClick={startNewSession}
