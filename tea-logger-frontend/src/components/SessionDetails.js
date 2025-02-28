@@ -1,8 +1,8 @@
 // src/components/SessionDetails.js
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save } from 'lucide-react';
-import { fetchSessions, updateSession } from '../api';
+import { ArrowLeft, Save, Trash } from 'lucide-react';
+import { fetchSessions, updateSession, deleteSession } from '../api';
 import './SessionDetails.css';
 
 const SessionDetails = () => {
@@ -11,6 +11,8 @@ const SessionDetails = () => {
   const [session, setSession] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
@@ -66,6 +68,28 @@ const SessionDetails = () => {
     }
   };
 
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    setMessage('');
+    
+    try {
+      const result = await deleteSession(session.id);
+      if (result && result.success) {
+        // Redirect to home page after successful deletion
+        navigate('/', { state: { message: 'Session deleted successfully' } });
+      } else {
+        setMessage('Failed to delete session');
+        setShowDeleteConfirm(false);
+      }
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      setMessage('Error deleting session');
+      setShowDeleteConfirm(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="app-container">
@@ -112,13 +136,23 @@ const SessionDetails = () => {
             <ArrowLeft size={24} />
           </button>
           <h1 className="app-title">Session Details</h1>
-          <button 
-            onClick={handleSubmit} 
-            className="icon-button"
-            disabled={isSaving}
-          >
-            <Save size={24} />
-          </button>
+          <div className="action-buttons">
+            <button 
+              onClick={() => setShowDeleteConfirm(true)} 
+              className="icon-button"
+              title="Delete session"
+            >
+              <Trash size={24} />
+            </button>
+            <button 
+              onClick={handleSubmit} 
+              className="icon-button"
+              disabled={isSaving}
+              title="Save changes"
+            >
+              <Save size={24} />
+            </button>
+          </div>
         </div>
       </header>
       
@@ -129,11 +163,11 @@ const SessionDetails = () => {
           )}
           
           <div className="form-group">
-            <label htmlFor="tea-name">Tea Name</label>
+            <label htmlFor="name">Tea Name</label>
             <input
               type="text"
-              id="tea-name"
-              name="tea-name"
+              id="name"
+              name="name"
               value={session.name}
               onChange={handleChange}
               className="form-input"
@@ -205,6 +239,34 @@ const SessionDetails = () => {
           </div>
         </form>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="modal-backdrop">
+          <div className="modal-container">
+            <h3 className="modal-title">Delete Session</h3>
+            <p className="modal-message">
+              Are you sure you want to delete this tea session? This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button 
+                className="cancel-button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button 
+                className="delete-button"
+                onClick={handleDelete}
+                disabled={isDeleting}
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
