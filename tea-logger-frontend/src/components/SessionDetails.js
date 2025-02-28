@@ -113,7 +113,7 @@ const SessionDetails = () => {
       <div className="app-container">
         <header className="app-header">
           <div className="header-container">
-            <button onClick={() => navigate('/')} className="icon-button">
+            <button onClick={() => navigate(-1)} className="icon-button">
               <ArrowLeft size={24} />
             </button>
             <h1 className="app-title">Session Details</h1>
@@ -131,7 +131,7 @@ const SessionDetails = () => {
     <div className="app-container">
       <header className="app-header">
         <div className="header-container">
-          <button onClick={() => navigate('/')} className="icon-button">
+          <button onClick={() => navigate(-1)} className="icon-button">
             <ArrowLeft size={24} />
           </button>
           <h1 className="app-title">Session Details</h1>
