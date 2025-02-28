@@ -68,6 +68,25 @@ const TeaCollection = () => {
         const teaList = Array.from(teaMap.values());
         setTeas(teaList);
         setFilteredTeas(teaList);
+        
+        // Check if we need to focus on a specific tea
+        const focusTeaName = localStorage.getItem('focusTeaName');
+        if (focusTeaName) {
+          // Find the tea to expand
+          const focusTea = teaList.find(t => t.name === focusTeaName);
+          if (focusTea) {
+            setExpandedTea(focusTea.id);
+            // Scroll to the tea
+            setTimeout(() => {
+              const element = document.getElementById(`tea-${focusTea.id}`);
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }, 100);
+          }
+          // Clear the focus
+          localStorage.removeItem('focusTeaName');
+        }
       } catch (error) {
         console.error('Error loading sessions:', error);
       } finally {
@@ -404,7 +423,7 @@ const TeaCollection = () => {
             </div>
           ) : (
             filteredTeas.map(tea => (
-              <div key={tea.id} className="tea-card">
+              <div key={tea.id} className="tea-card" id={`tea-${tea.id}`}>
                 <div 
                   className="tea-card-main"
                   onClick={() => {
@@ -425,33 +444,43 @@ const TeaCollection = () => {
                     {tea.sessionCount > 0 && (
                       <div className="tea-stats">
                         <span 
-                          className="session-count"
+                          className="session-count clickable-stat"
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleSessionHistory(tea.id);
                           }}
+                          title="View all brewing sessions"
                         >
-                          {tea.sessionCount} session{tea.sessionCount !== 1 ? 's' : ''}
+                          <span className="stat-icon">📋</span> {tea.sessionCount} session{tea.sessionCount !== 1 ? 's' : ''}
                         </span>
-                        {tea.lastBrewed && (
-                          <span className="last-brewed">
-                            Last brewed: {formatDate(tea.lastBrewed)}
+                        {tea.lastBrewed && tea.sessions && tea.sessions.length > 0 && (
+                          <span 
+                            className="last-brewed clickable-stat"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Navigate to the most recent session
+                              navigate(`/session/${tea.sessions[0].id}`);
+                            }}
+                            title="Go to most recent session"
+                          >
+                            <span className="stat-icon">🕒</span> Last: {formatDate(tea.lastBrewed)}
                           </span>
                         )}
                       </div>
                     )}
                     {tea.notes && <p className="tea-notes">{tea.notes}</p>}
                   </div>
-                  <div className="tea-actions">
-                    <button 
-                      className="action-button delete-button" 
-                      onClick={(e) => handleDeleteClick(e, tea)}
-                      aria-label="Delete tea"
-                    >
-                      <Trash size={16} />
-                    </button>
-                  </div>
                 </div>
+                <button 
+                  className="card-delete-button" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteClick(e, tea);
+                  }}
+                  aria-label="Delete tea"
+                >
+                  <Trash size={16} />
+                </button>
                 
                 {/* Session History */}
                 {expandedTea === tea.id && (

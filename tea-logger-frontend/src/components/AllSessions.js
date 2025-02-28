@@ -115,7 +115,7 @@ const AllSessions = () => {
     <div className="app-container">
       <header className="app-header">
         <div className="header-container">
-          <button onClick={() => navigate(-1)} className="icon-button">
+          <button onClick={() => navigate('/')} className="icon-button">
             <ArrowLeft size={20} />
           </button>
           <h1 className="app-title">All Sessions</h1>
@@ -212,23 +212,21 @@ const AllSessions = () => {
                       {session.age && <span className="session-age">{session.age}</span>}
                     </div>
                   </div>
-                  <div className="session-controls">
-                    <div className="session-timestamp">
-                      <Clock size={12} className="timestamp-icon" />
-                      {new Date(session.timestamp).toLocaleDateString()}
-                    </div>
-                    <button
-                      className="action-button delete-button"
-                      onClick={(e) => handleDeleteClick(e, session)}
-                      aria-label="Delete session"
-                    >
-                      <Trash size={16} />
-                    </button>
+                  <div className="session-timestamp">
+                    <Clock size={12} className="timestamp-icon" />
+                    {new Date(session.timestamp).toLocaleDateString()}
                   </div>
                 </div>
                 {session.notes && (
                   <p className="session-notes">{session.notes}</p>
                 )}
+                <button
+                  className="card-delete-button"
+                  onClick={(e) => handleDeleteClick(e, session)}
+                  aria-label="Delete session"
+                >
+                  <Trash size={16} />
+                </button>
               </div>
             ))
           )}

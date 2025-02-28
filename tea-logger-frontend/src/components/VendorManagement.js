@@ -62,6 +62,56 @@ const VendorManagement = () => {
     }
   }, []);
 
+  // Load teas to populate vendor tea lists
+  useEffect(() => {
+    const populateVendorTeas = async () => {
+      try {
+        // Get all sessions
+        const response = await fetch('http://127.0.0.1:5000/api/sessions');
+        if (!response.ok) {
+          throw new Error('Failed to fetch sessions');
+        }
+        
+        const sessions = await response.json();
+        
+        // Extract unique teas per vendor
+        const vendorTeaMap = new Map();
+        
+        sessions.forEach(session => {
+          if (session.vendor) {
+            if (!vendorTeaMap.has(session.vendor)) {
+              vendorTeaMap.set(session.vendor, new Set());
+            }
+            vendorTeaMap.get(session.vendor).add(session.name);
+          }
+        });
+        
+        // Update vendors with teas
+        if (vendorTeaMap.size > 0) {
+          const updatedVendors = vendors.map(vendor => {
+            const teas = vendorTeaMap.get(vendor.name);
+            if (teas) {
+              return {
+                ...vendor,
+                teas: Array.from(teas)
+              };
+            }
+            return vendor;
+          });
+          
+          setVendors(updatedVendors);
+          localStorage.setItem('teaVendors', JSON.stringify(updatedVendors));
+        }
+      } catch (error) {
+        console.error('Error loading teas for vendors:', error);
+      }
+    };
+    
+    if (vendors.length > 0) {
+      populateVendorTeas();
+    }
+  }, [vendors.length]);
+
   // Save vendors to localStorage whenever they change
   useEffect(() => {
     if (vendors.length > 0) {
@@ -328,7 +378,9 @@ const VendorManagement = () => {
                       ) : (
                         <div className="teas-container">
                           {vendor.teas.map((tea, index) => (
-                            <div key={index} className="tea-item">{tea}</div>
+                            <div key={index} className="tea-item" onClick={() => navigate('/collection')}>
+                              {tea}
+                            </div>
                           ))}
                         </div>
                       )}
