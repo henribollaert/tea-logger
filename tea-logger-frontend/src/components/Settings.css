@@ -1,0 +1,87 @@
+/* Sync Settings Styles */
+.sync-settings {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #eee;
+}
+
+.sync-interval {
+  margin-bottom: 1rem;
+}
+
+.sync-interval h4 {
+  font-size: 1.125rem;
+  margin: 0 0 0.25rem 0;
+  color: #333;
+}
+
+.sync-interval p {
+  margin: 0 0 0.5rem 0;
+  color: #666;
+  font-size: 0.875rem;
+}
+
+.interval-select {
+  padding: 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  width: 100%;
+  max-width: 200px;
+}
+
+.sync-info {
+  font-size: 0.875rem;
+  color: #666;
+  margin-bottom: 1rem;
+}
+
+.sync-info p {
+  margin: 0.25rem 0;
+}
+
+.sync-warning {
+  color: #f59e0b;
+  font-weight: 500;
+}
+
+.sync-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: #16a34a;
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sync-button:hover {
+  background-color: #15803d;
+}
+
+.sync-button:disabled {
+  background-color: #84e1bc;
+  cursor: not-allowed;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+.app-info {
+  padding: 1rem 0;
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.app-info p {
+  margin: 0.25rem 0;
+}
