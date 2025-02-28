@@ -239,6 +239,7 @@
   justify-content: space-between;
   align-items: flex-start;
   transition: box-shadow 0.2s, transform 0.2s;
+  cursor: pointer;
 }
 
 .tea-card:hover {

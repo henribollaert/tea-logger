@@ -208,7 +208,7 @@ const TeaCollection = () => {
     <div className="app-container">
       <header className="app-header">
         <div className="header-container">
-          <button onClick={() => navigate(-1)} className="icon-button">
+          <button onClick={() => navigate('/')} className="icon-button">
             <ArrowLeft size={20} />
           </button>
           <h1 className="app-title">Tea Collection</h1>
@@ -380,7 +380,11 @@ const TeaCollection = () => {
             </div>
           ) : (
             filteredTeas.map(tea => (
-              <div key={tea.id} className="tea-card">
+              <div 
+                key={tea.id} 
+                className="tea-card"
+                onClick={() => handleEditTea(tea)}
+              >
                 <div className="tea-info">
                   <h3 className="tea-name">{tea.name}</h3>
                   <div className="tea-details">
@@ -402,15 +406,11 @@ const TeaCollection = () => {
                 </div>
                 <div className="tea-actions">
                   <button 
-                    className="action-button" 
-                    onClick={() => handleEditTea(tea)}
-                    aria-label="Edit tea"
-                  >
-                    <Edit size={16} />
-                  </button>
-                  <button 
                     className="action-button delete-button" 
-                    onClick={() => handleDeleteClick(tea)}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent triggering the card click
+                      handleDeleteClick(tea);
+                    }}
                     aria-label="Delete tea"
                   >
                     <Trash size={16} />
