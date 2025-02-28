@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, X, Plus, Edit, Trash } from 'lucide-react';
+import { ArrowLeft, Search, X, Plus, Edit, Trash, Save } from 'lucide-react';
 import { fetchSessions } from '../api';
 import './TeaCollection.css';
 
@@ -13,7 +13,12 @@ const TeaCollection = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('');
   const [isAddingTea, setIsAddingTea] = useState(false);
+  const [editingTeaId, setEditingTeaId] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [teaToDelete, setTeaToDelete] = useState(null);
+  const [notification, setNotification] = useState('');
   const [newTea, setNewTea] = useState({
+    id: null,
     name: '',
     type: '',
     vendor: '',
@@ -35,6 +40,7 @@ const TeaCollection = () => {
           const key = session.name;
           if (!teaMap.has(key)) {
             teaMap.set(key, {
+              id: session.id, // Use the first session's ID as the tea's ID
               name: session.name,
               type: session.type || '',
               vendor: session.vendor || '',
@@ -93,10 +99,10 @@ const TeaCollection = () => {
     teas.forEach(tea => {
       if (tea.type) types.add(tea.type);
     });
-    return ['', ...Array.from(types)];
+    return ['', ...Array.from(types)].sort();
   };
 
-  const handleNewTeaChange = (e) => {
+  const handleTeaChange = (e) => {
     const { name, value } = e.target;
     setNewTea(prev => ({
       ...prev,
@@ -111,6 +117,7 @@ const TeaCollection = () => {
       ...teas,
       {
         ...newTea,
+        id: Date.now(), // Generate a unique ID
         sessionCount: 0,
         lastBrewed: null
       }
@@ -118,7 +125,12 @@ const TeaCollection = () => {
     
     setTeas(updatedTeas);
     setIsAddingTea(false);
+    setNotification('Tea added to collection');
+    setTimeout(() => setNotification(''), 3000);
+    
+    // Reset form
     setNewTea({
+      id: null,
       name: '',
       type: '',
       vendor: '',
@@ -127,28 +139,105 @@ const TeaCollection = () => {
     });
   };
 
+  const handleEditTea = (tea) => {
+    setEditingTeaId(tea.id);
+    setNewTea({
+      id: tea.id,
+      name: tea.name,
+      type: tea.type,
+      vendor: tea.vendor,
+      year: tea.year,
+      notes: tea.notes
+    });
+  };
+
+  const handleUpdateTea = () => {
+    if (!newTea.name.trim()) return;
+    
+    const updatedTeas = teas.map(tea => 
+      tea.id === editingTeaId ? 
+        { ...tea, ...newTea } : 
+        tea
+    );
+    
+    setTeas(updatedTeas);
+    setEditingTeaId(null);
+    setNotification('Tea updated successfully');
+    setTimeout(() => setNotification(''), 3000);
+    
+    // Reset form
+    setNewTea({
+      id: null,
+      name: '',
+      type: '',
+      vendor: '',
+      year: '',
+      notes: ''
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTeaId(null);
+    setNewTea({
+      id: null,
+      name: '',
+      type: '',
+      vendor: '',
+      year: '',
+      notes: ''
+    });
+  };
+
+  const handleDeleteClick = (tea) => {
+    setTeaToDelete(tea);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDeleteTea = () => {
+    if (!teaToDelete) return;
+    
+    const updatedTeas = teas.filter(tea => tea.id !== teaToDelete.id);
+    setTeas(updatedTeas);
+    setShowDeleteConfirm(false);
+    setTeaToDelete(null);
+    setNotification('Tea deleted from collection');
+    setTimeout(() => setNotification(''), 3000);
+  };
+
   return (
     <div className="app-container">
       <header className="app-header">
         <div className="header-container">
-          <button onClick={() => navigate('/')} className="icon-button">
-            <ArrowLeft size={24} />
+          <button onClick={() => navigate(-1)} className="icon-button">
+            <ArrowLeft size={20} />
           </button>
           <h1 className="app-title">Tea Collection</h1>
           <button 
-            onClick={() => setIsAddingTea(!isAddingTea)} 
+            onClick={() => {
+              setIsAddingTea(!isAddingTea);
+              setEditingTeaId(null);
+            }} 
             className="icon-button"
           >
-            {isAddingTea ? <X size={24} /> : <Plus size={24} />}
+            {isAddingTea ? <X size={20} /> : <Plus size={20} />}
           </button>
         </div>
       </header>
       
       <div className="main-content">
-        {/* Add New Tea Form */}
-        {isAddingTea && (
-          <div className="add-tea-form">
-            <h3 className="form-title">Add New Tea</h3>
+        {/* Notification */}
+        {notification && (
+          <div className="notification">
+            {notification}
+          </div>
+        )}
+      
+        {/* Add/Edit Tea Form */}
+        {(isAddingTea || editingTeaId) && (
+          <div className="tea-form">
+            <h3 className="form-title">
+              {editingTeaId ? 'Edit Tea' : 'Add New Tea'}
+            </h3>
             
             <div className="form-group">
               <label htmlFor="name">Tea Name*</label>
@@ -157,7 +246,7 @@ const TeaCollection = () => {
                 id="name"
                 name="name"
                 value={newTea.name}
-                onChange={handleNewTeaChange}
+                onChange={handleTeaChange}
                 className="form-input"
                 required
               />
@@ -169,7 +258,7 @@ const TeaCollection = () => {
                 id="type"
                 name="type"
                 value={newTea.type}
-                onChange={handleNewTeaChange}
+                onChange={handleTeaChange}
                 className="form-select"
               >
                 <option value="">Select a type</option>
@@ -178,7 +267,8 @@ const TeaCollection = () => {
                 <option value="Yellow">Yellow</option>
                 <option value="Oolong">Oolong</option>
                 <option value="Black">Black</option>
-                <option value="Dark (Puerh)">Dark (Puerh)</option>
+                <option value="Sheng Puer">Sheng Puer</option>
+                <option value="Shu Puer">Shu Puer</option>
                 <option value="Herbal">Herbal</option>
                 <option value="Other">Other</option>
               </select>
@@ -191,7 +281,7 @@ const TeaCollection = () => {
                 id="vendor"
                 name="vendor"
                 value={newTea.vendor}
-                onChange={handleNewTeaChange}
+                onChange={handleTeaChange}
                 className="form-input"
               />
             </div>
@@ -203,7 +293,7 @@ const TeaCollection = () => {
                 id="year"
                 name="year"
                 value={newTea.year}
-                onChange={handleNewTeaChange}
+                onChange={handleTeaChange}
                 className="form-input"
               />
             </div>
@@ -214,7 +304,7 @@ const TeaCollection = () => {
                 id="notes"
                 name="notes"
                 value={newTea.notes}
-                onChange={handleNewTeaChange}
+                onChange={handleTeaChange}
                 className="form-textarea"
                 rows="3"
               ></textarea>
@@ -223,16 +313,16 @@ const TeaCollection = () => {
             <div className="form-actions">
               <button 
                 className="cancel-button"
-                onClick={() => setIsAddingTea(false)}
+                onClick={editingTeaId ? handleCancelEdit : () => setIsAddingTea(false)}
               >
                 Cancel
               </button>
               <button 
                 className="save-button"
-                onClick={handleAddTea}
+                onClick={editingTeaId ? handleUpdateTea : handleAddTea}
                 disabled={!newTea.name.trim()}
               >
-                Add Tea
+                {editingTeaId ? 'Update Tea' : 'Add Tea'}
               </button>
             </div>
           </div>
@@ -241,7 +331,7 @@ const TeaCollection = () => {
         {/* Filters and Search */}
         <div className="filters-container">
           <div className="search-box">
-            <Search size={18} className="search-icon" />
+            <Search size={16} className="search-icon" />
             <input
               type="text"
               className="search-input"
@@ -255,7 +345,7 @@ const TeaCollection = () => {
                 className="clear-search"
                 aria-label="Clear search"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             )}
           </div>
@@ -290,13 +380,13 @@ const TeaCollection = () => {
             </div>
           ) : (
             filteredTeas.map(tea => (
-              <div key={tea.name} className="tea-card">
+              <div key={tea.id} className="tea-card">
                 <div className="tea-info">
                   <h3 className="tea-name">{tea.name}</h3>
                   <div className="tea-details">
-                    {tea.type && <span className="tea-type">{tea.type}</span>}
-                    {tea.vendor && <span className="tea-vendor">{tea.vendor}</span>}
-                    {tea.year && <span className="tea-year">{tea.year}</span>}
+                    {tea.type && <span className="tea-tag">{tea.type}</span>}
+                    {tea.vendor && <span className="tea-tag">{tea.vendor}</span>}
+                    {tea.year && <span className="tea-tag">{tea.year}</span>}
                   </div>
                   {tea.sessionCount > 0 && (
                     <div className="tea-stats">
@@ -313,14 +403,14 @@ const TeaCollection = () => {
                 <div className="tea-actions">
                   <button 
                     className="action-button" 
-                    onClick={() => console.log('Edit tea:', tea.name)}
+                    onClick={() => handleEditTea(tea)}
                     aria-label="Edit tea"
                   >
                     <Edit size={16} />
                   </button>
                   <button 
                     className="action-button delete-button" 
-                    onClick={() => console.log('Delete tea:', tea.name)}
+                    onClick={() => handleDeleteClick(tea)}
                     aria-label="Delete tea"
                   >
                     <Trash size={16} />
@@ -331,6 +421,35 @@ const TeaCollection = () => {
           )}
         </div>
       </div>
+      
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && teaToDelete && (
+        <div className="modal-backdrop">
+          <div className="modal-container">
+            <h3 className="modal-title">Delete Tea</h3>
+            <p className="modal-message">
+              Are you sure you want to delete "{teaToDelete.name}" from your collection? This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button 
+                className="cancel-button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setTeaToDelete(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                className="delete-button"
+                onClick={handleDeleteTea}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -18,8 +18,12 @@ const AllSessions = () => {
       setIsLoading(true);
       try {
         const data = await fetchSessions();
-        setSessions(data);
-        setFilteredSessions(data);
+        // Sort by date descending by default
+        const sortedData = [...data].sort((a, b) => 
+          new Date(b.timestamp) - new Date(a.timestamp)
+        );
+        setSessions(sortedData);
+        setFilteredSessions(sortedData);
       } catch (error) {
         console.error('Error loading sessions:', error);
       } finally {
@@ -72,15 +76,15 @@ const AllSessions = () => {
     sessions.forEach(session => {
       if (session.type) types.add(session.type);
     });
-    return ['', ...Array.from(types)];
+    return ['', ...Array.from(types)].sort();
   };
 
   return (
     <div className="app-container">
       <header className="app-header">
         <div className="header-container">
-          <button onClick={() => navigate('/')} className="icon-button">
-            <ArrowLeft size={24} />
+          <button onClick={() => navigate(-1)} className="icon-button">
+            <ArrowLeft size={20} />
           </button>
           <h1 className="app-title">All Sessions</h1>
           <div className="spacer"></div>
@@ -91,7 +95,7 @@ const AllSessions = () => {
         {/* Filters and Search */}
         <div className="filters-container">
           <div className="search-box">
-            <Search size={18} className="search-icon" />
+            <Search size={16} className="search-icon" />
             <input
               type="text"
               className="search-input"
@@ -105,7 +109,7 @@ const AllSessions = () => {
                 className="clear-search"
                 aria-label="Clear search"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             )}
           </div>
@@ -159,16 +163,18 @@ const AllSessions = () => {
                 key={session.id} 
                 className="session-card"
                 onClick={() => navigate(`/session/${session.id}`)}
-                style={{ cursor: 'pointer' }}
               >
                 <div className="session-header">
                   <div>
                     <h3 className="session-title">{session.name}</h3>
-                    {session.vendor && <p className="session-detail">{session.vendor}</p>}
-                    {session.type && <p className="session-detail">{session.type}</p>}
+                    <div className="session-meta">
+                      {session.vendor && <span className="session-vendor">{session.vendor}</span>}
+                      {session.type && <span className="session-type">{session.type}</span>}
+                      {session.age && <span className="session-age">{session.age}</span>}
+                    </div>
                   </div>
                   <div className="session-timestamp">
-                    <Clock size={14} className="timestamp-icon" />
+                    <Clock size={12} className="timestamp-icon" />
                     {new Date(session.timestamp).toLocaleDateString()}
                   </div>
                 </div>
