@@ -1,8 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { PlusCircle, Clock, Menu, X } from 'lucide-react';
 import './TeaLogger.css';
 import { fetchSessions, createSession, getSyncStatus, forceSync } from '../api';
+
+// Known vendors and their abbreviations
+const KNOWN_VENDORS = {
+  'w2t': 'White2Tea',
+  'white2tea': 'White2Tea',
+  'crimson': 'Crimson Lotus Tea',
+  'clt': 'Crimson Lotus Tea',
+  'ys': 'Yunnan Sourcing',
+  'yunnansourcing': 'Yunnan Sourcing',
+  'bitterleaf': 'Bitterleaf Teas',
+  'bt': 'Bitterleaf Teas',
+  'tgy': 'Tea from Taiwan',
+  'eot': 'Essence of Tea',
+  'lp': 'Liquid Proust',
+  'teamania': 'Teamania',
+};
 
 const TeaLogger = () => {
   const [sessions, setSessions] = useState([]);
@@ -12,9 +28,22 @@ const TeaLogger = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState(null);
+  const [notification, setNotification] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
+    // Check for notifications from other components
+    if (location.state?.message) {
+      setNotification(location.state.message);
+      // Clear the location state
+      window.history.replaceState({}, document.title);
+      // Auto-hide notification after 3 seconds
+      setTimeout(() => {
+        setNotification('');
+      }, 3000);
+    }
+
     // Load sessions from API
     const loadSessions = async () => {
       setIsLoading(true);
@@ -34,7 +63,7 @@ const TeaLogger = () => {
     };
     
     loadSessions();
-  }, []);
+  }, [location.state]);
   
   // Add this useEffect for background sync
   useEffect(() => {
@@ -64,15 +93,53 @@ const TeaLogger = () => {
     return () => clearInterval(intervalId);
   }, []);
 
+  // Function to parse natural language input
+  const parseTeaInput = (input) => {
+    const result = {
+      name: '',
+      vendor: '',
+      age: ''
+    };
+
+    // Break input into tokens
+    const tokens = input.trim().split(/\s+/);
+    
+    // Check for known vendors at the beginning
+    if (tokens.length > 0) {
+      const firstToken = tokens[0].toLowerCase();
+      if (KNOWN_VENDORS[firstToken]) {
+        result.vendor = KNOWN_VENDORS[firstToken];
+        tokens.shift(); // Remove the vendor token
+      }
+    }
+    
+    // Check for year at the end (4 digit number or 2 digit year prefixed with ')
+    if (tokens.length > 0) {
+      const lastToken = tokens[tokens.length - 1];
+      if (/^(19|20)\d{2}$/.test(lastToken) || /^'\d{2}$/.test(lastToken)) {
+        result.age = lastToken.replace(/^'/, '20'); // Convert '19 to 2019
+        tokens.pop(); // Remove the year token
+      }
+    }
+    
+    // The rest is the tea name
+    result.name = tokens.join(' ');
+    
+    return result;
+  };
+
   const startNewSession = async () => {
     if (!currentTea.trim()) return;
     
+    // Parse the input
+    const parsedInput = parseTeaInput(currentTea);
+    
     const newSession = {
       id: Date.now(),
-      name: currentTea,
+      name: parsedInput.name || currentTea, // Use parsed name or original input if parsing failed
       type: '',
-      age: '',
-      vendor: '',
+      age: parsedInput.age || '',
+      vendor: parsedInput.vendor || '',
       timestamp: new Date().toISOString(),
       notes: '',
     };
@@ -86,12 +153,22 @@ const TeaLogger = () => {
       setCurrentTea('');
       
       // Update recent teas
-      if (!recentTeas.includes(currentTea)) {
-        const updatedRecentTeas = [currentTea, ...recentTeas].slice(0, 5);
+      if (!recentTeas.includes(newSession.name)) {
+        const updatedRecentTeas = [newSession.name, ...recentTeas].slice(0, 5);
         setRecentTeas(updatedRecentTeas);
       }
+      
+      // Show notification
+      setNotification('Tea session added successfully');
+      setTimeout(() => {
+        setNotification('');
+      }, 3000);
     } catch (error) {
       console.error('Error creating session:', error);
+      setNotification('Error adding tea session');
+      setTimeout(() => {
+        setNotification('');
+      }, 3000);
     }
   };
 
@@ -114,6 +191,13 @@ const TeaLogger = () => {
       
       {/* Main Content */}
       <main className="main-content">
+        {/* Notification */}
+        {notification && (
+          <div className="notification">
+            {notification}
+          </div>
+        )}
+        
         {/* Quick Add Bar */}
         <div className="quick-add-container">
           <div className="input-group">
@@ -121,7 +205,7 @@ const TeaLogger = () => {
               <input
                 type="text"
                 className="text-input"
-                placeholder="What tea are you drinking now?"
+                placeholder="What tea are you drinking now? (e.g. w2t Hot Brandy 2019)"
                 value={currentTea}
                 onChange={(e) => {
                   setCurrentTea(e.target.value);
