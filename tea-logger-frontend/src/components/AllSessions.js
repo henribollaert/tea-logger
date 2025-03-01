@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Clock, Search, X, Trash } from 'lucide-react';
 import { fetchSessions, deleteSession } from '../api';
+import {fetchTeaById, fetchTeaByName} from '../teaApi';
 import './AllSessions.css';
 
 const AllSessions = () => {
@@ -111,6 +112,28 @@ const AllSessions = () => {
     }
   };
 
+  // Updated code for your click handler
+  const handleSessionClick = async (session) => {
+    try {
+      // First await the tea data
+      let tea;
+      if (session.teaId) {
+        tea = await fetchTeaById(session.teaId);
+      } else {
+        tea = await fetchTeaByName(session.name);
+      }
+      
+      // Then navigate with the resolved data
+      navigate(`/session/${session.id}`, { 
+        state: { tea } 
+      });
+    } catch (error) {
+      console.error('Error fetching tea data:', error);
+      // Navigate anyway, without the tea data
+      navigate(`/session/${session.id}`);
+    }
+  };
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -201,7 +224,7 @@ const AllSessions = () => {
               <div 
                 key={session.id} 
                 className="session-card"
-                onClick={() => navigate(`/session/${session.id}`)}
+                onClick={() => handleSessionClick(session)}
               >
                 <div className="session-header">
                   <div>

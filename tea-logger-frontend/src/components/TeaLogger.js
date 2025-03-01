@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { PlusCircle, Clock, Menu, X, ChevronDown } from 'lucide-react';
 import './TeaLogger.css';
 import { fetchSessions, createSession, getSyncStatus, forceSync } from '../api';
-import { fetchTeas, fetchTeaByName, createTea } from '../teaApi';
+import { fetchTeas, fetchTeaByName, createTea, fetchTeaById } from '../teaApi';
 
 // Known vendors and their abbreviations
 const KNOWN_VENDORS = {
@@ -43,7 +43,7 @@ const TeaLogger = () => {
   const [showAllSessions, setShowAllSessions] = useState(false);
   const inputRef = useRef(null);
   const navigate = useNavigate();
-  const location = useLocation();
+  const location = useLocation();  
 
   useEffect(() => {
     // Check for notifications from other components
@@ -71,13 +71,22 @@ const TeaLogger = () => {
         
         setSessions(sortedSessions);
         
-        // Load teas for suggestions
-        const teasData = fetchTeas();
-        setTeas(teasData);
+        // Get all teas in one request instead of multiple
+        const teasData = await fetchTeas();
         
-        // Extract names for suggestions
-        const teaNames = teasData.map(tea => tea.name);
-        setRecentTeas(teaNames.slice(0, 5));
+        // Create lookup map for faster access
+        const teaMap = {};
+        teasData.forEach(tea => {
+          teaMap[tea.id] = tea;
+        });
+        
+        // Extract recent tea names
+        const recentTeaNames = sortedSessions
+          .slice(0, 5)
+          .map(session => session.name || (teaMap[session.teaId]?.name))
+          .filter(Boolean);
+        
+        setRecentTeas([...new Set(recentTeaNames)]); // Deduplicate
       } catch (error) {
         console.error('Error loading data:', error);
       } finally {
@@ -244,6 +253,27 @@ const TeaLogger = () => {
     }
   };
 
+  const handleSessionClick = async (session) => {
+    try {
+      // First await the tea data
+      let tea;
+      if (session.teaId) {
+        tea = await fetchTeaById(session.teaId);
+      } else {
+        tea = await fetchTeaByName(session.name);
+      }
+      
+      // Then navigate with the resolved data
+      navigate(`/session/${session.id}`, { 
+        state: { tea } 
+      });
+    } catch (error) {
+      console.error('Error fetching tea data:', error);
+      // Navigate anyway, without the tea data
+      navigate(`/session/${session.id}`);
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Header */}
@@ -329,7 +359,7 @@ const TeaLogger = () => {
                 <div 
                   key={session.id} 
                   className="session-card"
-                  onClick={() => navigate(`/session/${session.id}`)}
+                  onClick={() => handleSessionClick(session)}
                 >
                   <div className="session-header">
                     <div>

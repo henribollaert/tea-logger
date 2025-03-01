@@ -4,7 +4,16 @@ import json
 import os
 import time
 from datetime import datetime
-from drive_service import save_sessions_to_drive, load_sessions_from_drive, get_drive_service
+from drive_service import save_sessions_to_drive, load_sessions_from_drive
+from tea_service import (
+    get_tea_collection, 
+    get_tea_by_id, 
+    get_tea_by_name, 
+    create_tea, 
+    update_tea, 
+    delete_tea
+)
+
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -112,6 +121,8 @@ def get_sessions():
     sessions = get_sessions_from_storage(use_drive, force_sync)
     return jsonify(sessions)
 
+TEA_NAME_REQUIRED = "Tea name is required"
+
 @app.route('/api/sessions', methods=['POST'])
 def create_session():
     """Create a new tea session."""
@@ -121,7 +132,7 @@ def create_session():
         
         # Validate required fields
         if not session_data or 'name' not in session_data:
-            return jsonify({"error": "Tea name is required"}), 400
+            return jsonify({"error": TEA_NAME_REQUIRED}), 400
             
         # Add timestamp if not provided
         if 'timestamp' not in session_data:
@@ -146,6 +157,8 @@ def create_session():
         return jsonify(session_data), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+SESSION_NOT_FOUND =  "Session not found"
 
 @app.route('/api/sessions/<session_id>', methods=['GET'])
 def get_session(session_id):
@@ -159,7 +172,7 @@ def get_session(session_id):
             if str(session.get('id')) == str(session_id):
                 return jsonify(session)
                     
-        return jsonify({"error": "Session not found"}), 404
+        return jsonify({"error": SESSION_NOT_FOUND}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -182,7 +195,7 @@ def update_session(session_id):
                 
                 return jsonify(sessions[i])
                     
-        return jsonify({"error": "Session not found"}), 404
+        return jsonify({"error": SESSION_NOT_FOUND}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -209,7 +222,7 @@ def delete_session(session_id):
             
             return jsonify({"message": "Session deleted", "session": deleted_session})
                 
-        return jsonify({"error": "Session not found"}), 404
+        return jsonify({"error": SESSION_NOT_FOUND}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -272,6 +285,99 @@ def set_sync_interval():
         })
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+# Add these imports at the top of your app.py file
+from tea_service import (
+    get_tea_collection, 
+    get_tea_by_id, 
+    get_tea_by_name, 
+    create_tea, 
+    update_tea, 
+    delete_tea
+)
+
+# Add these routes to your Flask app.py
+@app.route('/api/teas', methods=['GET'])
+def get_teas():
+    """Get all teas."""
+    teas = get_tea_collection()
+    return jsonify(teas)
+
+@app.route('/api/teas', methods=['POST'])
+def create_tea_route():
+    """Create a new tea."""
+    try:
+        tea_data = request.json
+        
+        # Validate required fields
+        if not tea_data or 'name' not in tea_data:
+            return jsonify({"error": "Tea name is required"}), 400
+            
+        # Create tea
+        new_tea = create_tea(tea_data)
+        
+        return jsonify(new_tea), 201
+    except Exception as e:
+        print(f"Error creating tea: {e}")
+        return jsonify({"error": str(e)}), 500
+    
+TEA_NOT_FOUND = "Tea not found"
+
+@app.route('/api/teas/<tea_id>', methods=['GET'])
+def get_tea_route(tea_id):
+    """Get a specific tea by ID."""
+    tea = get_tea_by_id(tea_id)
+    
+    if tea:
+        return jsonify(tea)
+    
+    # If tea not found by ID, try to find by name
+    # This is for backward compatibility
+    tea = get_tea_by_name(tea_id)
+    if tea:
+        return jsonify(tea)
+    
+    return jsonify({"error": TEA_NOT_FOUND}), 404
+
+@app.route('/api/teas/by-name/<name>', methods=['GET'])
+def get_tea_by_name_route(name):
+    """Get a tea by name."""
+    tea = get_tea_by_name(name)
+    
+    if tea:
+        return jsonify(tea)
+    
+    return jsonify({"error": TEA_NOT_FOUND}), 404
+
+@app.route('/api/teas/<tea_id>', methods=['PUT'])
+def update_tea_route(tea_id):
+    """Update an existing tea."""
+    try:
+        tea_data = request.json
+        
+        # Validate required fields
+        if not tea_data or 'name' not in tea_data:
+            return jsonify({"error": "Tea name is required"}), 400
+            
+        # Update tea
+        updated_tea = update_tea(tea_id, tea_data)
+        
+        if updated_tea:
+            return jsonify(updated_tea)
+        
+        return jsonify({"error": TEA_NOT_FOUND}), 404
+    except Exception as e:
+        print(f"Error updating tea: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/teas/<tea_id>', methods=['DELETE'])
+def delete_tea_route(tea_id):
+    """Delete a tea."""
+    success = delete_tea(tea_id)
+    
+    if success:
+        return jsonify({"message": "Tea deleted successfully"})
+    
+    return jsonify({"error": TEA_NOT_FOUND}), 404
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, X, Plus, Trash, Clock } from 'lucide-react';
 import { fetchSessions } from '../api';
-import { fetchTeas, createTea, updateTea, deleteTea } from '../teaApi';
+import { fetchTeas, createTea, updateTea, deleteTea, fetchTeaById } from '../teaApi';
 import './TeaCollection.css';
 
 const TeaCollection = () => {
@@ -28,13 +28,13 @@ const TeaCollection = () => {
     notes: ''
   });
 
-  // Load both teas and sessions
+    // Load both teas and sessions
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        // Load teas from collection
-        const teasData = fetchTeas();
+        // Load teas first - use one API call to get all teas
+        const teasData = await fetchTeas();
         
         // Load sessions
         const sessionsData = await fetchSessions();
@@ -45,19 +45,16 @@ const TeaCollection = () => {
           // Find all sessions for this tea
           const teaSessions = sessionsData.filter(session => 
             (session.teaId && session.teaId === tea.id) || 
-            (!session.teaId && session.name === tea.name) // Fallback for compatibility
+            (!session.teaId && session.name === tea.name)
           );
           
           // Sort sessions by timestamp (newest first)
           teaSessions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
           
-          // Get the most recent brew date
-          const lastBrewed = teaSessions.length > 0 ? teaSessions[0].timestamp : null;
-          
           return {
             ...tea,
             sessionCount: teaSessions.length,
-            lastBrewed,
+            lastBrewed: teaSessions.length > 0 ? teaSessions[0].timestamp : null,
             sessions: teaSessions
           };
         });
@@ -191,7 +188,7 @@ const TeaCollection = () => {
     
     try {
       // Update tea in collection
-      const updatedTea = updateTea(editingTeaId, {
+      const updatedTea = await updateTea(editingTeaId, {
         name: newTea.name.trim(),
         type: newTea.type,
         vendor: newTea.vendor,
@@ -205,9 +202,22 @@ const TeaCollection = () => {
           if (tea.id === editingTeaId) {
             return {
               ...updatedTea,
-              sessionCount: tea.sessionCount,
+              sessionCount: tea.sessionCount || 0,
               lastBrewed: tea.lastBrewed,
-              sessions: tea.sessions
+              sessions: tea.sessions || []
+            };
+          }
+          return tea;
+        }));
+        
+        // Make sure to update filteredTeas as well
+        setFilteredTeas(prev => prev.map(tea => {
+          if (tea.id === editingTeaId) {
+            return {
+              ...updatedTea,
+              sessionCount: tea.sessionCount || 0,
+              lastBrewed: tea.lastBrewed,
+              sessions: tea.sessions || []
             };
           }
           return tea;
@@ -215,7 +225,9 @@ const TeaCollection = () => {
         
         setEditingTeaId(null);
         setNotification('Tea updated successfully');
-        setTimeout(() => setNotification(''), 3000);
+        setTimeout(() => {
+          setNotification('');
+        }, 3000);
         
         // Reset form
         setNewTea({
@@ -228,12 +240,16 @@ const TeaCollection = () => {
         });
       } else {
         setNotification('Error updating tea');
-        setTimeout(() => setNotification(''), 3000);
+        setTimeout(() => {
+          setNotification('');
+        }, 3000);
       }
     } catch (error) {
       console.error('Error updating tea:', error);
       setNotification('Error updating tea');
-      setTimeout(() => setNotification(''), 3000);
+      setTimeout(() => {
+        setNotification('');
+      }, 3000);
     }
   };
 
@@ -485,9 +501,9 @@ const TeaCollection = () => {
                   <div className="tea-info">
                     <h3 className="tea-name">{tea.name}</h3>
                     <div className="tea-details">
-                      {tea.type && <span className="tea-tag">{tea.type}</span>}
-                      {tea.vendor && <span className="tea-tag">{tea.vendor}</span>}
-                      {tea.year && <span className="tea-tag">{tea.year}</span>}
+                      {tea.type && <span key={`type-${tea.id}`} className="tea-tag">{tea.type}</span>}
+                      {tea.vendor && <span key={`vendor-${tea.id}`} className="tea-tag">{tea.vendor}</span>}
+                      {tea.year && <span key={`year-${tea.id}`} className="tea-tag">{tea.year}</span>}
                     </div>
                     {tea.sessionCount > 0 && (
                       <div className="tea-stats">

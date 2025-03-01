@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Save, Trash, ExternalLink } from 'lucide-react';
 import { fetchSessions, updateSession, deleteSession } from '../api';
 import { fetchTeaById } from '../teaApi';
@@ -8,6 +8,7 @@ import './SessionDetails.css';
 const SessionDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [session, setSession] = useState(null);
   const [tea, setTea] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,13 +24,16 @@ const SessionDetails = () => {
         // First load the session
         const sessions = await fetchSessions();
         const foundSession = sessions.find(s => String(s.id) === String(id));
-                    
+                      
         if (foundSession) {
           setSession(foundSession);
           
-          // Then load the associated tea if there's a teaId
-          if (foundSession.teaId) {
-            const teaData = fetchTeaById(foundSession.teaId);
+          // Check if tea was passed in location state
+          if (location.state?.tea) {
+            setTea(location.state.tea);
+          } else if (foundSession.teaId) {
+            // Then load the associated tea if there's a teaId
+            const teaData = await fetchTeaById(foundSession.teaId);
             setTea(teaData);
           } else {
             // For backward compatibility, use session data 
@@ -53,7 +57,7 @@ const SessionDetails = () => {
     };
     
     loadSessionAndTea();
-  }, [id]);
+  }, [id, location.state]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

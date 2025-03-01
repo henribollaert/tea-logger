@@ -99,56 +99,84 @@ const ensureTeaReferences = async (sessions) => {
   const needsMigration = sessions.some(session => !session.teaId);
   
   if (needsMigration) {
-    // Create tea references for existing sessions
-    const teaMap = migrateSessionsToTeaReferences(sessions);
-    
-    // Update sessions with tea references
-    return sessions.map(session => {
-      if (!session.teaId && teaMap.has(session.name)) {
-        return {
-          ...session,
-          teaId: teaMap.get(session.name)
-        };
+    try {
+      // Create tea references for existing sessions
+      // This function should return a Map
+      const teaMap = await migrateSessionsToTeaReferences(sessions);
+      
+      // Ensure teaMap is actually a Map object
+      if (teaMap && typeof teaMap.has === 'function') {
+        // Update sessions with tea references
+        return sessions.map(session => {
+          if (!session.teaId && teaMap.has(session.name)) {
+            return {
+              ...session,
+              teaId: teaMap.get(session.name)
+            };
+          }
+          return session;
+        });
+      } else {
+        console.error('Migration returned invalid teaMap:', teaMap);
+        return sessions; // Return original sessions if migration failed
       }
-      return session;
-    });
+    } catch (error) {
+      console.error('Error during migration:', error);
+      return sessions; // Return original sessions if migration failed
+    }
   }
   
   return sessions;
 };
 
 // Create a new session with tea reference
+// Create a new session with tea reference
 export const createSession = async (sessionData) => {
   try {
+    console.log('Creating session with data:', sessionData);
+    
     // First, ensure the tea exists or create it
     let teaId = sessionData.teaId;
+    let teaName = sessionData.name;
     
-    if (!teaId) {
+    if (!teaId && teaName) {
       // Try to find by name
-      const existingTea = fetchTeaByName(sessionData.name);
+      console.log('Trying to find tea by name:', teaName);
+      const existingTea = await fetchTeaByName(teaName);
       
-      if (existingTea) {
+      if (existingTea && existingTea.id) {
+        console.log('Found existing tea:', existingTea);
         teaId = existingTea.id;
       } else {
         // Create new tea
-        const newTea = createTea({
-          name: sessionData.name,
+        console.log('Creating new tea for session');
+        const newTea = await createTea({
+          name: teaName,
           type: sessionData.type || '',
           vendor: sessionData.vendor || '',
           year: sessionData.age || '',
           notes: ''  // Session notes shouldn't be stored with the tea
         });
-        teaId = newTea.id;
+        
+        if (newTea && newTea.id) {
+          console.log('New tea created:', newTea);
+          teaId = newTea.id;
+        } else {
+          console.error('Failed to create tea, using local ID');
+          teaId = `local-${Date.now()}`;
+        }
       }
     }
     
     // Prepare the session with tea reference
     const session = { 
       ...sessionData,
-      id: sessionData.id.toString(),
+      id: sessionData.id || Date.now().toString(),
       teaId: teaId,
       timestamp: sessionData.timestamp || new Date().toISOString()
     };
+    
+    console.log('Prepared session for API:', session);
 
     try {
       // Try server request
@@ -161,10 +189,11 @@ export const createSession = async (sessionData) => {
       });
       
       if (!response.ok) {
-        throw new Error('Failed to create session on server');
+        throw new Error(`Failed to create session on server: ${response.status}`);
       }
       
       const responseData = await response.json();
+      console.log('Server response:', responseData);
       
       // Update our cache with the new session
       if (sessionCache) {
