@@ -301,4 +301,124 @@ export const deleteSession = async (id) => {
   }
 };
 
-// The rest of your API methods (toggleStorage, forceSync, etc.) remain the same
+// Toggle Google Drive storage
+export const toggleStorage = async (useGoogleDrive) => {
+  try {
+    // Store preference in localStorage
+    localStorage.setItem('useGoogleDrive', useGoogleDrive);
+    
+    try {
+      // Force sync if enabled
+      if (useGoogleDrive) {
+        await forceSync();
+      }
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error during toggle sync:', error);
+      return { success: false, message: error.message };
+    }
+  } catch (error) {
+    console.error('Error toggling storage:', error);
+    return { success: false, message: error.message };
+  }
+};
+
+// Force sync with Google Drive
+export const forceSync = async () => {
+  try {
+    // Only proceed if Google Drive is enabled
+    if (!getStoragePreference()) {
+      return { success: false, message: 'Google Drive not enabled' };
+    }
+    
+    try {
+      // Send force sync request to server
+      const response = await fetch(addStorageParam(`${API_URL}/sync`), {
+        method: 'POST',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to sync with server');
+      }
+      
+      const result = await response.json();
+      
+      // Refresh sessions after sync
+      await fetchSessions(true);
+      
+      return result;
+    } catch (error) {
+      console.error('Error syncing with server:', error);
+      return { success: false, message: error.message };
+    }
+  } catch (error) {
+    console.error('Error in force sync:', error);
+    return { success: false, message: error.message };
+  }
+};
+
+// Get sync status
+export const getSyncStatus = async () => {
+  try {
+    try {
+      // Get sync status from server
+      const response = await fetch(addStorageParam(`${API_URL}/sync/status`));
+      
+      if (!response.ok) {
+        throw new Error('Failed to get sync status from server');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error getting sync status from server:', error);
+      
+      // Return dummy status if server is unavailable
+      return {
+        last_sync: 0,
+        time_since_sync: 0,
+        sync_interval: parseInt(getSyncInterval(), 10),
+        drive_dirty: false
+      };
+    }
+  } catch (error) {
+    console.error('Error in get sync status:', error);
+    return {
+      last_sync: 0,
+      time_since_sync: 0,
+      sync_interval: parseInt(getSyncInterval(), 10),
+      drive_dirty: false
+    };
+  }
+};
+
+// Set sync interval
+export const setSyncInterval = async (intervalSeconds) => {
+  try {
+    // Store in localStorage
+    localStorage.setItem('syncInterval', intervalSeconds.toString());
+    
+    try {
+      // Update on server
+      const response = await fetch(addStorageParam(`${API_URL}/sync/interval`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ interval: intervalSeconds }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to set sync interval on server');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error setting sync interval on server:', error);
+      return { success: true, interval: intervalSeconds };
+    }
+  } catch (error) {
+    console.error('Error setting sync interval:', error);
+    return { success: false, message: error.message };
+  }
+};
