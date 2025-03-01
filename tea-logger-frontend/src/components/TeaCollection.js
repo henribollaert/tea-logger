@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, X, Plus, Trash, Clock } from 'lucide-react';
 import { fetchSessions } from '../api';
+import { fetchTeas, createTea, updateTea, deleteTea } from '../teaApi';
 import './TeaCollection.css';
 
 const TeaCollection = () => {
@@ -27,53 +28,48 @@ const TeaCollection = () => {
     notes: ''
   });
 
+  // Load both teas and sessions
   useEffect(() => {
-    const loadSessions = async () => {
+    const loadData = async () => {
       setIsLoading(true);
       try {
-        const data = await fetchSessions();
-        setSessions(data);
+        // Load teas from collection
+        const teasData = fetchTeas();
         
-        // Extract unique teas from sessions
-        const teaMap = new Map();
+        // Load sessions
+        const sessionsData = await fetchSessions();
+        setSessions(sessionsData);
         
-        data.forEach(session => {
-          const key = session.name;
-          if (!teaMap.has(key)) {
-            teaMap.set(key, {
-              id: session.id, // Use the first session's ID as the tea's ID
-              name: session.name,
-              type: session.type || '',
-              vendor: session.vendor || '',
-              year: session.age || '',
-              notes: session.notes || '',
-              sessionCount: 1,
-              lastBrewed: session.timestamp,
-              sessions: [session]
-            });
-          } else {
-            const tea = teaMap.get(key);
-            tea.sessionCount += 1;
-            tea.sessions.push(session);
-            
-            // Sort sessions by timestamp (newest first)
-            tea.sessions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            
-            if (new Date(session.timestamp) > new Date(tea.lastBrewed)) {
-              tea.lastBrewed = session.timestamp;
-            }
-          }
+        // Calculate session stats for each tea
+        const teasWithStats = teasData.map(tea => {
+          // Find all sessions for this tea
+          const teaSessions = sessionsData.filter(session => 
+            (session.teaId && session.teaId === tea.id) || 
+            (!session.teaId && session.name === tea.name) // Fallback for compatibility
+          );
+          
+          // Sort sessions by timestamp (newest first)
+          teaSessions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          
+          // Get the most recent brew date
+          const lastBrewed = teaSessions.length > 0 ? teaSessions[0].timestamp : null;
+          
+          return {
+            ...tea,
+            sessionCount: teaSessions.length,
+            lastBrewed,
+            sessions: teaSessions
+          };
         });
         
-        const teaList = Array.from(teaMap.values());
-        setTeas(teaList);
-        setFilteredTeas(teaList);
+        setTeas(teasWithStats);
+        setFilteredTeas(teasWithStats);
         
         // Check if we need to focus on a specific tea
         const focusTeaName = localStorage.getItem('focusTeaName');
         if (focusTeaName) {
           // Find the tea to expand
-          const focusTea = teaList.find(t => t.name === focusTeaName);
+          const focusTea = teasWithStats.find(t => t.name === focusTeaName);
           if (focusTea) {
             setExpandedTea(focusTea.id);
             // Scroll to the tea
@@ -88,17 +84,17 @@ const TeaCollection = () => {
           localStorage.removeItem('focusTeaName');
         }
       } catch (error) {
-        console.error('Error loading sessions:', error);
+        console.error('Error loading data:', error);
       } finally {
         setIsLoading(false);
       }
     };
     
-    loadSessions();
+    loadData();
   }, []);
 
+  // Filter teas based on search and type
   useEffect(() => {
-    // Filter teas based on search and type
     let result = [...teas];
     
     if (filterType) {
@@ -136,34 +132,46 @@ const TeaCollection = () => {
     }));
   };
 
-  const handleAddTea = () => {
+  const handleAddTea = async () => {
     if (!newTea.name.trim()) return;
     
-    const updatedTeas = [
-      ...teas,
-      {
-        ...newTea,
-        id: Date.now(), // Generate a unique ID
+    try {
+      // Create new tea in collection
+      const createdTea = createTea({
+        name: newTea.name.trim(),
+        type: newTea.type,
+        vendor: newTea.vendor,
+        year: newTea.year,
+        notes: newTea.notes
+      });
+      
+      // Add to current state with empty session stats
+      const teaWithStats = {
+        ...createdTea,
         sessionCount: 0,
         lastBrewed: null,
         sessions: []
-      }
-    ];
-    
-    setTeas(updatedTeas);
-    setIsAddingTea(false);
-    setNotification('Tea added to collection');
-    setTimeout(() => setNotification(''), 3000);
-    
-    // Reset form
-    setNewTea({
-      id: null,
-      name: '',
-      type: '',
-      vendor: '',
-      year: '',
-      notes: ''
-    });
+      };
+      
+      setTeas(prev => [...prev, teaWithStats]);
+      setIsAddingTea(false);
+      setNotification('Tea added to collection');
+      setTimeout(() => setNotification(''), 3000);
+      
+      // Reset form
+      setNewTea({
+        id: null,
+        name: '',
+        type: '',
+        vendor: '',
+        year: '',
+        notes: ''
+      });
+    } catch (error) {
+      console.error('Error adding tea:', error);
+      setNotification('Error adding tea to collection');
+      setTimeout(() => setNotification(''), 3000);
+    }
   };
 
   const handleEditTea = (tea) => {
@@ -171,36 +179,62 @@ const TeaCollection = () => {
     setNewTea({
       id: tea.id,
       name: tea.name,
-      type: tea.type,
-      vendor: tea.vendor,
-      year: tea.year,
-      notes: tea.notes
+      type: tea.type || '',
+      vendor: tea.vendor || '',
+      year: tea.year || '',
+      notes: tea.notes || ''
     });
   };
 
-  const handleUpdateTea = () => {
-    if (!newTea.name.trim()) return;
+  const handleUpdateTea = async () => {
+    if (!newTea.name.trim() || !editingTeaId) return;
     
-    const updatedTeas = teas.map(tea => 
-      tea.id === editingTeaId ? 
-        { ...tea, ...newTea } : 
-        tea
-    );
-    
-    setTeas(updatedTeas);
-    setEditingTeaId(null);
-    setNotification('Tea updated successfully');
-    setTimeout(() => setNotification(''), 3000);
-    
-    // Reset form
-    setNewTea({
-      id: null,
-      name: '',
-      type: '',
-      vendor: '',
-      year: '',
-      notes: ''
-    });
+    try {
+      // Update tea in collection
+      const updatedTea = updateTea(editingTeaId, {
+        name: newTea.name.trim(),
+        type: newTea.type,
+        vendor: newTea.vendor,
+        year: newTea.year,
+        notes: newTea.notes
+      });
+      
+      if (updatedTea) {
+        // Update in current state while preserving session stats
+        setTeas(prev => prev.map(tea => {
+          if (tea.id === editingTeaId) {
+            return {
+              ...updatedTea,
+              sessionCount: tea.sessionCount,
+              lastBrewed: tea.lastBrewed,
+              sessions: tea.sessions
+            };
+          }
+          return tea;
+        }));
+        
+        setEditingTeaId(null);
+        setNotification('Tea updated successfully');
+        setTimeout(() => setNotification(''), 3000);
+        
+        // Reset form
+        setNewTea({
+          id: null,
+          name: '',
+          type: '',
+          vendor: '',
+          year: '',
+          notes: ''
+        });
+      } else {
+        setNotification('Error updating tea');
+        setTimeout(() => setNotification(''), 3000);
+      }
+    } catch (error) {
+      console.error('Error updating tea:', error);
+      setNotification('Error updating tea');
+      setTimeout(() => setNotification(''), 3000);
+    }
   };
 
   const handleCancelEdit = () => {
@@ -221,15 +255,29 @@ const TeaCollection = () => {
     setShowDeleteConfirm(true);
   };
 
-  const handleDeleteTea = () => {
+  const handleDeleteTea = async () => {
     if (!teaToDelete) return;
     
-    const updatedTeas = teas.filter(tea => tea.id !== teaToDelete.id);
-    setTeas(updatedTeas);
-    setShowDeleteConfirm(false);
-    setTeaToDelete(null);
-    setNotification('Tea deleted from collection');
-    setTimeout(() => setNotification(''), 3000);
+    try {
+      // Delete tea from collection
+      const success = deleteTea(teaToDelete.id);
+      
+      if (success) {
+        // Remove from current state
+        setTeas(prev => prev.filter(tea => tea.id !== teaToDelete.id));
+        setShowDeleteConfirm(false);
+        setTeaToDelete(null);
+        setNotification('Tea deleted from collection');
+        setTimeout(() => setNotification(''), 3000);
+      } else {
+        setNotification('Error deleting tea');
+        setTimeout(() => setNotification(''), 3000);
+      }
+    } catch (error) {
+      console.error('Error deleting tea:', error);
+      setNotification('Error deleting tea');
+      setTimeout(() => setNotification(''), 3000);
+    }
   };
 
   const toggleSessionHistory = (teaId) => {

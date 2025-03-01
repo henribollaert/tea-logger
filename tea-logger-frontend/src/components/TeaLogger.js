@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { PlusCircle, Clock, Menu, X, ChevronDown } from 'lucide-react';
 import './TeaLogger.css';
 import { fetchSessions, createSession, getSyncStatus, forceSync } from '../api';
+import { fetchTeas, fetchTeaByName, createTea } from '../teaApi';
 
 // Known vendors and their abbreviations
 const KNOWN_VENDORS = {
@@ -20,7 +21,7 @@ const KNOWN_VENDORS = {
   'teamania': 'Teamania',
 };
 
-// Example suggestions
+// Example suggestions for quick input
 const SUGGESTED_TEAS = [
   { name: "White2Tea Hot Brandy", tag: "Black" },
   { name: "Yunnan Sourcing Impression", tag: "Sheng Puer" },
@@ -31,6 +32,7 @@ const SUGGESTED_TEAS = [
 
 const TeaLogger = () => {
   const [sessions, setSessions] = useState([]);
+  const [teas, setTeas] = useState([]);
   const [currentTea, setCurrentTea] = useState('');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [recentTeas, setRecentTeas] = useState([]);
@@ -55,31 +57,35 @@ const TeaLogger = () => {
       }, 3000);
     }
 
-    // Load sessions from API
-    const loadSessions = async () => {
+    // Load sessions and teas
+    const loadData = async () => {
       setIsLoading(true);
       try {
-        const data = await fetchSessions();
+        // Load sessions from API
+        const sessionsData = await fetchSessions();
         
         // Sort sessions by timestamp, most recent first
-        const sortedData = [...data].sort((a, b) => 
+        const sortedSessions = [...sessionsData].sort((a, b) => 
           new Date(b.timestamp) - new Date(a.timestamp)
         );
         
-        setSessions(sortedData);
+        setSessions(sortedSessions);
         
-        // Extract unique tea names for suggestions
-        const teas = data.map(session => session.name);
-        const uniqueTeas = [...new Set(teas)];
-        setRecentTeas(uniqueTeas.slice(0, 5));
+        // Load teas for suggestions
+        const teasData = fetchTeas();
+        setTeas(teasData);
+        
+        // Extract names for suggestions
+        const teaNames = teasData.map(tea => tea.name);
+        setRecentTeas(teaNames.slice(0, 5));
       } catch (error) {
-        console.error('Error loading sessions:', error);
+        console.error('Error loading data:', error);
       } finally {
         setIsLoading(false);
       }
     };
     
-    loadSessions();
+    loadData();
   }, [location.state]);
   
   // Add this useEffect for background sync
@@ -164,21 +170,43 @@ const TeaLogger = () => {
   const startNewSession = async () => {
     if (!currentTea.trim()) return;
     
-    // Parse the input
-    const parsedInput = parseTeaInput(currentTea);
-    
-    const newSession = {
-      id: Date.now(),
-      name: parsedInput.name || currentTea, // Use parsed name or original input if parsing failed
-      type: '',
-      age: parsedInput.age || '',
-      vendor: parsedInput.vendor || '',
-      timestamp: new Date().toISOString(),
-      notes: '',
-    };
-    
-    // Save to database/API
     try {
+      // Parse the input
+      const parsedInput = parseTeaInput(currentTea);
+      
+      // Check if this tea already exists in the collection
+      let teaId = null;
+      const existingTea = fetchTeaByName(parsedInput.name);
+      
+      if (existingTea) {
+        // Use existing tea
+        teaId = existingTea.id;
+      } else {
+        // Create a new tea in the collection
+        const newTea = createTea({
+          name: parsedInput.name,
+          type: '',  // Can be set later in tea details
+          vendor: parsedInput.vendor || '',
+          year: parsedInput.age || '',
+          notes: ''
+        });
+        teaId = newTea.id;
+      }
+      
+      // Create a new session with reference to the tea
+      const newSession = {
+        id: Date.now().toString(),
+        teaId: teaId,
+        name: parsedInput.name, // Keep for backward compatibility
+        timestamp: new Date().toISOString(),
+        notes: '',
+        // Include these for display purposes and backward compatibility
+        vendor: parsedInput.vendor || '',
+        type: '',
+        age: parsedInput.age || ''
+      };
+      
+      // Save the session
       const savedSession = await createSession(newSession);
       
       // Update state
@@ -186,8 +214,8 @@ const TeaLogger = () => {
       setCurrentTea('');
       
       // Update recent teas
-      if (!recentTeas.includes(newSession.name)) {
-        const updatedRecentTeas = [newSession.name, ...recentTeas].slice(0, 5);
+      if (!recentTeas.includes(parsedInput.name)) {
+        const updatedRecentTeas = [parsedInput.name, ...recentTeas].slice(0, 5);
         setRecentTeas(updatedRecentTeas);
       }
       

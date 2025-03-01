@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, Trash, ExternalLink } from 'lucide-react';
 import { fetchSessions, updateSession, deleteSession } from '../api';
+import { fetchTeaById } from '../teaApi';
 import './SessionDetails.css';
 
 const SessionDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [session, setSession] = useState(null);
+  const [tea, setTea] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -15,15 +17,30 @@ const SessionDetails = () => {
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    const loadSession = async () => {
+    const loadSessionAndTea = async () => {
       setIsLoading(true);
       try {
+        // First load the session
         const sessions = await fetchSessions();
-        // Convert both to strings for comparison
         const foundSession = sessions.find(s => String(s.id) === String(id));
                     
         if (foundSession) {
           setSession(foundSession);
+          
+          // Then load the associated tea if there's a teaId
+          if (foundSession.teaId) {
+            const teaData = fetchTeaById(foundSession.teaId);
+            setTea(teaData);
+          } else {
+            // For backward compatibility, use session data 
+            setTea({
+              id: null,
+              name: foundSession.name,
+              type: foundSession.type || '',
+              vendor: foundSession.vendor || '',
+              year: foundSession.age || ''
+            });
+          }
         } else {
           setMessage('Session not found');
         }
@@ -35,15 +52,18 @@ const SessionDetails = () => {
       }
     };
     
-    loadSession();
+    loadSessionAndTea();
   }, [id]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setSession(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    // Only allow changing notes in the session details
+    if (name === 'notes') {
+      setSession(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -52,16 +72,17 @@ const SessionDetails = () => {
     setMessage('');
     
     try {
-      const updatedSession = await updateSession(session.id, session);
+      // Only update the notes field
+      const updatedSession = await updateSession(session.id, { notes: session.notes });
       if (updatedSession) {
-        setMessage('Session updated successfully');
+        setMessage('Session notes updated successfully');
         setSession(updatedSession);
       } else {
         setMessage('Failed to update session');
       }
     } catch (error) {
       console.error('Error updating session:', error);
-      setMessage('Error updating session');
+      setMessage('Error updating session notes');
     } finally {
       setIsSaving(false);
     }
@@ -72,16 +93,14 @@ const SessionDetails = () => {
     setMessage('');
     
     try {
-      // Let's assume the deletion was successful even if there's a network error
-      // This is because the API updates the local cache regardless
+      // Delete the session
       await deleteSession(session.id);
       
-      // Always navigate back with success message
+      // Navigate back with success message
       navigate('/', { state: { message: 'Session deleted successfully' } });
     } catch (error) {
       console.error('Error deleting session:', error);
       // Even if there's an error, the session is likely deleted from the local cache
-      // So we'll still navigate back, but with a different message
       navigate('/', { state: { message: 'Session deleted from local cache' } });
     } finally {
       setIsDeleting(false);
@@ -89,9 +108,13 @@ const SessionDetails = () => {
   };
 
   const handleTitleClick = () => {
-    // Store the current tea name to focus on in collection
-    if (session) {
-      localStorage.setItem('focusTeaName', session.name);
+    // Store the tea name or ID to focus on in collection
+    if (tea) {
+      if (tea.id) {
+        localStorage.setItem('focusTeaId', tea.id);
+      } else {
+        localStorage.setItem('focusTeaName', tea.name);
+      }
       navigate('/collection');
     } else {
       navigate('/collection');
@@ -117,7 +140,7 @@ const SessionDetails = () => {
     );
   }
 
-  if (!session) {
+  if (!session || !tea) {
     return (
       <div className="app-container">
         <header className="app-header">
@@ -130,7 +153,7 @@ const SessionDetails = () => {
           </div>
         </header>
         <div className="main-content">
-          <div className="empty-state">{message || 'Session not found'}</div>
+          <div className="empty-state">{message || 'Session or tea not found'}</div>
         </div>
       </div>
     );
@@ -173,7 +196,7 @@ const SessionDetails = () => {
           <div className="session-tea-info">
             <div className="tea-header">
               <h2 className="tea-title">
-                {session.name}
+                {tea.name}
                 <button
                   className="link-to-tea"
                   onClick={(e) => {
@@ -186,9 +209,9 @@ const SessionDetails = () => {
                 </button>
               </h2>
               <div className="tea-metadata">
-                {session.vendor && <span className="metadata-item">{session.vendor}</span>}
-                {session.type && <span className="metadata-item">{session.type}</span>}
-                {session.age && <span className="metadata-item">{session.age}</span>}
+                {tea.vendor && <span className="metadata-item">{tea.vendor}</span>}
+                {tea.type && <span className="metadata-item">{tea.type}</span>}
+                {tea.year && <span className="metadata-item">{tea.year}</span>}
               </div>
             </div>
             <div className="session-timestamp">
