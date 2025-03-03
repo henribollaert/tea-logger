@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
@@ -13,7 +14,9 @@ from tea_service import (
     update_tea, 
     delete_tea
 )
-
+from cache_middleware import cache_manager
+from models import Tea, Session
+from utils import ensure_string_id, is_valid_id
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -21,27 +24,15 @@ CORS(app)  # Enable CORS for all routes
 # File to store sessions locally
 LOCAL_STORAGE_FILE = 'tea_sessions.json'
 
-# Cache for sessions data
-sessions_cache = {
-    'data': None,
-    'last_sync': 0,
-    'drive_dirty': False  # Flag to indicate if Google Drive needs updating
-}
-
 # Configuration
 SYNC_INTERVAL = 60  # Default sync interval in seconds (can be changed by client)
 
 def get_sessions_from_storage(use_drive=False, force_sync=False):
     """Get sessions from either Google Drive or local storage with caching."""
-    global sessions_cache
-    
-    current_time = time.time()
-    
-    # Use cache if available and not expired
-    if (sessions_cache['data'] is not None and 
-        not force_sync and 
-        (current_time - sessions_cache['last_sync']) < SYNC_INTERVAL):
-        return sessions_cache['data']
+    # Check cache first
+    cached_sessions = cache_manager.get('sessions', force_sync)
+    if cached_sessions is not None:
+        return cached_sessions
     
     # Sync with Google Drive if requested
     if use_drive:
@@ -49,9 +40,7 @@ def get_sessions_from_storage(use_drive=False, force_sync=False):
             drive_sessions = load_sessions_from_drive()
             
             # Update cache
-            sessions_cache['data'] = drive_sessions
-            sessions_cache['last_sync'] = current_time
-            sessions_cache['drive_dirty'] = False
+            cache_manager.set('sessions', drive_sessions)
             
             # Also update local file as backup
             with open(LOCAL_STORAGE_FILE, 'w') as f:
@@ -60,7 +49,7 @@ def get_sessions_from_storage(use_drive=False, force_sync=False):
             return drive_sessions
         except Exception as e:
             print(f"Error loading from Google Drive: {e}")
-            # Fall back to local cache or file
+            # Fall back to local file
     
     # Use local file
     if os.path.exists(LOCAL_STORAGE_FILE):
@@ -68,8 +57,7 @@ def get_sessions_from_storage(use_drive=False, force_sync=False):
             local_sessions = json.load(f)
             
         # Update cache
-        sessions_cache['data'] = local_sessions
-        sessions_cache['last_sync'] = current_time
+        cache_manager.set('sessions', local_sessions)
         
         return local_sessions
     
@@ -78,10 +66,9 @@ def get_sessions_from_storage(use_drive=False, force_sync=False):
 
 def save_sessions_to_storage(sessions, use_drive=False):
     """Save sessions to either Google Drive or local storage with caching."""
-    global sessions_cache
-    
     # Update cache
-    sessions_cache['data'] = sessions
+    cache_manager.set('sessions', sessions)
+    cache_manager.invalidate('dashboard')  # Invalidate dashboard cache
     
     # Always save to local file
     with open(LOCAL_STORAGE_FILE, 'w') as f:
@@ -91,25 +78,17 @@ def save_sessions_to_storage(sessions, use_drive=False):
     if use_drive:
         try:
             save_sessions_to_drive(sessions)
-            sessions_cache['drive_dirty'] = False
-            sessions_cache['last_sync'] = time.time()
             return True
         except Exception as e:
             print(f"Error saving to Google Drive: {e}")
-            # Mark cache as dirty (needs sync)
-            sessions_cache['drive_dirty'] = True
             return False
-    else:
-        # If we're not using Drive currently but it's configured, mark as dirty
-        if sessions_cache.get('drive_configured', False):
-            sessions_cache['drive_dirty'] = True
     
     return True
 
 @app.route('/api/sessions', methods=['GET'])
 def get_sessions():
     """Get all tea sessions."""
-    global SYNC_INTERVAL  # Add this line - declare global before using
+    global SYNC_INTERVAL
     
     use_drive = request.args.get('use_drive', 'false').lower() == 'true'
     force_sync = request.args.get('force_sync', 'false').lower() == 'true'
@@ -117,6 +96,7 @@ def get_sessions():
     
     # Update the sync interval if provided
     SYNC_INTERVAL = sync_interval
+    cache_manager.set_ttl('sessions', sync_interval)
     
     sessions = get_sessions_from_storage(use_drive, force_sync)
     return jsonify(sessions)
@@ -133,45 +113,45 @@ def create_session():
         # Validate required fields
         if not session_data or 'name' not in session_data:
             return jsonify({"error": TEA_NAME_REQUIRED}), 400
-            
-        # Add timestamp if not provided
-        if 'timestamp' not in session_data:
-            session_data['timestamp'] = datetime.now().isoformat()
-            
-        # Add unique ID if not provided
-        if 'id' not in session_data:
-            session_data['id'] = str(int(datetime.now().timestamp() * 1000))
-        else:
-            # Ensure ID is a string
-            session_data['id'] = str(session_data['id'])
-            
+        
+        # Create a Session object from the data
+        session = Session.from_dict(session_data)
+        
+        # Convert back to dictionary for storage
+        session_dict = session.to_dict()
+        
         # Load existing sessions
         sessions = get_sessions_from_storage(use_drive)
-                
+        
         # Add new session
-        sessions.append(session_data)
+        sessions.append(session_dict)
         
         # Save sessions
         save_sessions_to_storage(sessions, use_drive)
         
-        return jsonify(session_data), 201
+        return jsonify(session_dict), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
-SESSION_NOT_FOUND =  "Session not found"
+
+SESSION_NOT_FOUND = "Session not found"
 
 @app.route('/api/sessions/<session_id>', methods=['GET'])
 def get_session(session_id):
     """Get a specific tea session by ID."""
     try:
+        # Validate ID
+        if not is_valid_id(session_id):
+            return jsonify({"error": "Invalid session ID"}), 400
+            
+        session_id = ensure_string_id(session_id)
         use_drive = request.args.get('use_drive', 'false').lower() == 'true'
         sessions = get_sessions_from_storage(use_drive)
-                
+        
         # Find session with matching ID
         for session in sessions:
-            if str(session.get('id')) == str(session_id):
+            if str(session.get('id')) == session_id:
                 return jsonify(session)
-                    
+        
         return jsonify({"error": SESSION_NOT_FOUND}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -180,21 +160,37 @@ def get_session(session_id):
 def update_session(session_id):
     """Update an existing tea session."""
     try:
+        # Validate ID
+        if not is_valid_id(session_id):
+            return jsonify({"error": "Invalid session ID"}), 400
+            
+        session_id = ensure_string_id(session_id)
         session_data = request.json
         use_drive = request.args.get('use_drive', 'false').lower() == 'true'
         
         sessions = get_sessions_from_storage(use_drive)
-            
+        
         # Find and update session
         for i, session in enumerate(sessions):
-            if str(session.get('id')) == str(session_id):
-                sessions[i] = {**session, **session_data}
+            if str(session.get('id')) == session_id:
+                # Create a Session object from the existing data
+                updated_session = Session.from_dict(session)
+                
+                # Update with new data
+                for key, value in session_data.items():
+                    setattr(updated_session, key, value)
+                
+                # Add updated timestamp
+                updated_session.updated = datetime.now().isoformat()
+                
+                # Convert back to dictionary for storage
+                sessions[i] = updated_session.to_dict()
                 
                 # Save sessions
                 save_sessions_to_storage(sessions, use_drive)
                 
                 return jsonify(sessions[i])
-                    
+        
         return jsonify({"error": SESSION_NOT_FOUND}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -203,16 +199,21 @@ def update_session(session_id):
 def delete_session(session_id):
     """Delete a tea session."""
     try:
+        # Validate ID
+        if not is_valid_id(session_id):
+            return jsonify({"error": "Invalid session ID"}), 400
+            
+        session_id = ensure_string_id(session_id)
         use_drive = request.args.get('use_drive', 'false').lower() == 'true'
         sessions = get_sessions_from_storage(use_drive)
-            
+        
         # Find session index
         session_index = None
         for i, session in enumerate(sessions):
-            if str(session.get('id')) == str(session_id):
+            if str(session.get('id')) == session_id:
                 session_index = i
                 break
-                
+        
         if session_index is not None:
             # Remove session
             deleted_session = sessions.pop(session_index)
@@ -221,7 +222,7 @@ def delete_session(session_id):
             save_sessions_to_storage(sessions, use_drive)
             
             return jsonify({"message": "Session deleted", "session": deleted_session})
-                
+        
         return jsonify({"error": SESSION_NOT_FOUND}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -239,37 +240,36 @@ def force_sync():
         drive_sessions = load_sessions_from_drive()
         
         # Update cache and local file
-        global sessions_cache
-        sessions_cache['data'] = drive_sessions
-        sessions_cache['last_sync'] = time.time()
-        sessions_cache['drive_dirty'] = False
+        cache_manager.set('sessions', drive_sessions)
         
         with open(LOCAL_STORAGE_FILE, 'w') as f:
             json.dump(drive_sessions, f)
         
         return jsonify({"success": True, "message": "Synced with Google Drive successfully"})
     except Exception as e:
-        print(f"Error in force_sync: {e}")  # Add detailed logging
+        print(f"Error in force_sync: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/api/sync/status', methods=['GET'])
 def get_sync_status():
     """Get the current sync status."""
+    cache = cache_manager.caches.get('sessions', {})
     current_time = time.time()
-    time_since_sync = current_time - sessions_cache['last_sync']
+    last_sync = cache.get('last_sync', 0)
+    time_since_sync = current_time - last_sync
     
     return jsonify({
-        "last_sync": sessions_cache['last_sync'],
+        "last_sync": last_sync,
         "time_since_sync": time_since_sync,
         "sync_interval": SYNC_INTERVAL,
-        "drive_dirty": sessions_cache.get('drive_dirty', False)
+        "drive_dirty": cache.get('dirty', False)
     })
 
 @app.route('/api/sync/interval', methods=['POST'])
 def set_sync_interval():
     """Set the synchronization interval."""
     try:
-        global SYNC_INTERVAL  # Declare global before using
+        global SYNC_INTERVAL
         data = request.json
         interval = data.get('interval')
         
@@ -277,6 +277,7 @@ def set_sync_interval():
             return jsonify({"success": False, "message": "Invalid sync interval"}), 400
         
         SYNC_INTERVAL = interval
+        cache_manager.set_ttl('sessions', interval)
         
         return jsonify({
             "success": True, 
@@ -285,21 +286,17 @@ def set_sync_interval():
         })
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
-# Add these imports at the top of your app.py file
-from tea_service import (
-    get_tea_collection, 
-    get_tea_by_id, 
-    get_tea_by_name, 
-    create_tea, 
-    update_tea, 
-    delete_tea
-)
 
-# Add these routes to your Flask app.py
 @app.route('/api/teas', methods=['GET'])
 def get_teas():
     """Get all teas."""
+    # Check cache first
+    cached_teas = cache_manager.get('teas')
+    if cached_teas is not None:
+        return jsonify(cached_teas)
+        
     teas = get_tea_collection()
+    cache_manager.set('teas', teas)
     return jsonify(teas)
 
 @app.route('/api/teas', methods=['POST'])
@@ -310,21 +307,32 @@ def create_tea_route():
         
         # Validate required fields
         if not tea_data or 'name' not in tea_data:
-            return jsonify({"error": "Tea name is required"}), 400
-            
-        # Create tea
-        new_tea = create_tea(tea_data)
+            return jsonify({"error": TEA_NAME_REQUIRED}), 400
+        
+        # Create a Tea object from the data
+        tea = Tea.from_dict(tea_data)
+        
+        # Create tea using the service
+        new_tea = create_tea(tea.to_dict())
+        
+        # Invalidate caches
+        cache_manager.invalidate('teas')
+        cache_manager.invalidate('dashboard')
         
         return jsonify(new_tea), 201
     except Exception as e:
-        print(f"Error creating tea: {e}")
         return jsonify({"error": str(e)}), 500
-    
+
 TEA_NOT_FOUND = "Tea not found"
 
 @app.route('/api/teas/<tea_id>', methods=['GET'])
 def get_tea_route(tea_id):
     """Get a specific tea by ID."""
+    # Validate ID
+    if not is_valid_id(tea_id):
+        return jsonify({"error": "Invalid tea ID"}), 400
+        
+    tea_id = ensure_string_id(tea_id)
     tea = get_tea_by_id(tea_id)
     
     if tea:
@@ -352,27 +360,49 @@ def get_tea_by_name_route(name):
 def update_tea_route(tea_id):
     """Update an existing tea."""
     try:
+        # Validate ID
+        if not is_valid_id(tea_id):
+            return jsonify({"error": "Invalid tea ID"}), 400
+            
+        tea_id = ensure_string_id(tea_id)
         tea_data = request.json
         
         # Validate required fields
         if not tea_data or 'name' not in tea_data:
-            return jsonify({"error": "Tea name is required"}), 400
-            
-        # Update tea
-        updated_tea = update_tea(tea_id, tea_data)
+            return jsonify({"error": TEA_NAME_REQUIRED}), 400
+        
+        # Create a Tea object from the data
+        tea = Tea.from_dict(tea_data)
+        tea.id = tea_id  # Ensure ID doesn't change
+        tea.updated = datetime.now().isoformat()
+        
+        # Update tea using the service
+        updated_tea = update_tea(tea_id, tea.to_dict())
+        
+        # Invalidate caches
+        cache_manager.invalidate('teas')
+        cache_manager.invalidate('dashboard')
         
         if updated_tea:
             return jsonify(updated_tea)
         
         return jsonify({"error": TEA_NOT_FOUND}), 404
     except Exception as e:
-        print(f"Error updating tea: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/teas/<tea_id>', methods=['DELETE'])
 def delete_tea_route(tea_id):
     """Delete a tea."""
+    # Validate ID
+    if not is_valid_id(tea_id):
+        return jsonify({"error": "Invalid tea ID"}), 400
+        
+    tea_id = ensure_string_id(tea_id)
     success = delete_tea(tea_id)
+    
+    # Invalidate caches
+    cache_manager.invalidate('teas')
+    cache_manager.invalidate('dashboard')
     
     if success:
         return jsonify({"message": "Tea deleted successfully"})
@@ -386,11 +416,17 @@ def get_dashboard_data():
         use_drive = request.args.get('use_drive', 'false').lower() == 'true'
         force_sync = request.args.get('force_sync', 'false').lower() == 'true'
         
-        # Get sessions and teas in a single operation
+        # Check cache first
+        if not force_sync:
+            cached_dashboard = cache_manager.get('dashboard')
+            if cached_dashboard is not None:
+                return jsonify(cached_dashboard)
+        
+        # Get sessions and teas
         sessions = get_sessions_from_storage(use_drive, force_sync)
         teas = get_tea_collection()
         
-        # Calculate additional stats that are currently computed client-side
+        # Calculate additional stats
         tea_stats = {}
         for tea in teas:
             tea_id = str(tea['id'])
@@ -406,17 +442,23 @@ def get_dashboard_data():
                 'sessionIds': [s['id'] for s in tea_sessions]
             }
         
-        # For the main dashboard, get recent sessions
+        # Get recent sessions
         recent_sessions = sorted(sessions, 
                                key=lambda s: s.get('timestamp', ''), 
                                reverse=True)[:5]
         
-        return jsonify({
+        # Create the dashboard data
+        dashboard_data = {
             'sessions': sessions,
             'teas': teas,
             'teaStats': tea_stats,
             'recentSessions': recent_sessions
-        })
+        }
+        
+        # Cache the dashboard data
+        cache_manager.set('dashboard', dashboard_data)
+        
+        return jsonify(dashboard_data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -424,26 +466,31 @@ def get_dashboard_data():
 def get_session_details(session_id):
     """Get a session and its associated tea in a single request."""
     try:
+        # Validate ID
+        if not is_valid_id(session_id):
+            return jsonify({"error": "Invalid session ID"}), 400
+            
+        session_id = ensure_string_id(session_id)
         use_drive = request.args.get('use_drive', 'false').lower() == 'true'
         sessions = get_sessions_from_storage(use_drive)
         
         # Find the session
         session = None
         for s in sessions:
-            if str(s.get('id')) == str(session_id):
+            if str(s.get('id')) == session_id:
                 session = s
                 break
-                
+        
         if not session:
             return jsonify({"error": "Session not found"}), 404
-            
+        
         # Get the associated tea
         tea = None
         if session.get('teaId'):
             tea = get_tea_by_id(session.get('teaId'))
         elif session.get('name'):
             tea = get_tea_by_name(session.get('name'))
-            
+        
         if not tea and session.get('name'):
             # Create a basic tea object from session data
             tea = {
@@ -451,15 +498,15 @@ def get_session_details(session_id):
                 'name': session.get('name'),
                 'type': session.get('type', ''),
                 'vendor': session.get('vendor', ''),
-                'year': session.get('age', '')
+                'year': session.get('age', '') or session.get('year', '')
             }
-            
+        
         return jsonify({
             'session': session,
             'tea': tea
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

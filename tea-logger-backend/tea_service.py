@@ -2,6 +2,8 @@
 import json
 import os
 from datetime import datetime
+from models import Tea
+from utils import ensure_string_id, is_valid_id
 
 # File to store tea collection
 TEA_STORAGE_FILE = 'tea_collection.json'
@@ -12,12 +14,12 @@ def migrate_from_localstorage():
     if os.path.exists(TEA_STORAGE_FILE) and os.path.getsize(TEA_STORAGE_FILE) > 0:
         # We already have data, no need to migrate
         return
-        
+    
     # Check if we have a sessions file
     if not os.path.exists('tea_sessions.json'):
         # No sessions file, so nothing to migrate
         return
-        
+    
     # Try to extract teas from sessions
     with open('tea_sessions.json', 'r') as f:
         try:
@@ -28,20 +30,14 @@ def migrate_from_localstorage():
             for session in sessions:
                 name = session.get('name')
                 if name and name not in teas:
-                    teas[name] = {
-                        'id': session.get('teaId') or str(int(datetime.now().timestamp() * 1000)),
-                        'name': name,
-                        'type': session.get('type', ''),
-                        'vendor': session.get('vendor', ''),
-                        'year': session.get('age', ''),
-                        'notes': '',
-                        'created': datetime.now().isoformat()
-                    }
+                    # Create a Tea object from the session data
+                    tea = Tea.from_legacy(session)
+                    teas[name] = tea.to_dict()
             
             # Save teas to file
             with open(TEA_STORAGE_FILE, 'w') as tea_file:
                 json.dump(list(teas.values()), tea_file)
-                
+            
             print(f"Migrated {len(teas)} teas from sessions")
         except json.JSONDecodeError:
             # Problem with the sessions file, create empty teas file
@@ -77,10 +73,13 @@ def get_tea_by_id(tea_id):
     """Get a specific tea by ID."""
     if not tea_id:
         return None
-        
+    
+    # Ensure tea_id is a string
+    tea_id = ensure_string_id(tea_id)
+    
     teas = get_tea_collection()
     for tea in teas:
-        if str(tea.get('id')) == str(tea_id):
+        if str(tea.get('id')) == tea_id:
             return tea
     return None
 
@@ -88,7 +87,7 @@ def get_tea_by_name(name):
     """Get a tea by name (case-insensitive)."""
     if not name:
         return None
-        
+    
     teas = get_tea_collection()
     for tea in teas:
         if tea.get('name', '').lower() == name.lower():
@@ -104,51 +103,58 @@ def create_tea(tea_data):
     if existing_tea:
         return existing_tea
     
-    # Create new tea with ID
-    timestamp = int(datetime.now().timestamp() * 1000)
-    new_tea = {
-        **tea_data,
-        'id': tea_data.get('id') or str(timestamp),  # Use existing ID if provided
-        'created': datetime.now().isoformat()
-    }
+    # Ensure we have created_at
+    if 'created' not in tea_data:
+        tea_data['created'] = datetime.now().isoformat()
     
     # Add to collection and save
-    teas.append(new_tea)
+    teas.append(tea_data)
     save_tea_collection(teas)
     
-    return new_tea
+    return tea_data
 
 def update_tea(tea_id, tea_data):
     """Update an existing tea."""
+    if not is_valid_id(tea_id):
+        return None
+    
+    tea_id = ensure_string_id(tea_id)
     teas = get_tea_collection()
     
     for i, tea in enumerate(teas):
-        if str(tea.get('id')) == str(tea_id):
-            # Update while preserving ID and created date
+        if str(tea.get('id')) == tea_id:
+            # Update while preserving ID
             updated_tea = {
                 **tea,
                 **tea_data,
                 'id': tea['id'],  # Ensure ID doesn't change
-                'updated': datetime.now().isoformat()
             }
+            
+            # Ensure we have updated_at
+            if 'updated' not in updated_tea:
+                updated_tea['updated'] = datetime.now().isoformat()
             
             teas[i] = updated_tea
             save_tea_collection(teas)
             return updated_tea
-            
+    
     return None
 
 def delete_tea(tea_id):
     """Delete a tea from the collection."""
+    if not is_valid_id(tea_id):
+        return False
+    
+    tea_id = ensure_string_id(tea_id)
     teas = get_tea_collection()
     original_count = len(teas)
     
-    filtered_teas = [tea for tea in teas if str(tea.get('id')) != str(tea_id)]
+    filtered_teas = [tea for tea in teas if str(tea.get('id')) != tea_id]
     
     if len(filtered_teas) < original_count:
         save_tea_collection(filtered_teas)
         return True
-        
+    
     return False
 
 def get_teas_by_ids(tea_ids):
@@ -156,7 +162,7 @@ def get_teas_by_ids(tea_ids):
     tea_collection = get_tea_collection()
     
     # Convert all IDs to strings for comparison
-    tea_ids = [str(id) for id in tea_ids]
+    tea_ids = [ensure_string_id(id) for id in tea_ids if id]
     
     # Filter the collection to just the requested teas
     requested_teas = [tea for tea in tea_collection if str(tea.get('id')) in tea_ids]
