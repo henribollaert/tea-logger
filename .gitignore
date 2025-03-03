@@ -52,3 +52,4 @@ tea_sessions.json
 # Build outputs
 /build
 /dist
+tea-logger-backend/tea_collection.json
