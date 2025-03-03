@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+// src/components/TeaLogger.js
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { PlusCircle, Clock, Menu, X, ChevronDown } from 'lucide-react';
 import './TeaLogger.css';
-import { fetchDashboardData, fetchSessions, createSession, getSyncStatus, forceSync } from '../api';
-import { fetchTeas, fetchTeaByName, createTea, fetchTeaById } from '../teaApi';
+import { fetchDashboardData, createSession, getSyncStatus, forceSync } from '../api';
 
+// Import custom hooks
+import { useNotification } from '../hooks/useNotification';
+import { useForm } from '../hooks/useForm';
 
 // Known vendors and their abbreviations
 const KNOWN_VENDORS = {
@@ -32,40 +35,41 @@ const SUGGESTED_TEAS = [
 ];
 
 const TeaLogger = () => {
+  // Use custom hooks
+  const { notification, showNotification } = useNotification();
+  const { values: inputForm, handleChange: handleInputChange, reset: resetInput, setValues: setInputValues } = useForm({ teaInput: '' });
+  
+  // Component state
   const [sessions, setSessions] = useState([]);
   const [teas, setTeas] = useState([]);
-  const [currentTea, setCurrentTea] = useState('');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [recentTeas, setRecentTeas] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState(null);
-  const [notification, setNotification] = useState('');
   const [showAllSessions, setShowAllSessions] = useState(false);
+  
   const inputRef = useRef(null);
   const navigate = useNavigate();
-  const location = useLocation();  
+  const location = useLocation();
 
+  // Check for notifications from other components via location state
   useEffect(() => {
-    // Check for notifications from other components
     if (location.state?.message) {
-      setNotification(location.state.message);
+      showNotification(location.state.message);
       // Clear the location state
       window.history.replaceState({}, document.title);
-      // Auto-hide notification after 3 seconds
-      setTimeout(() => {
-        setNotification('');
-      }, 3000);
     }
-  
-    // Load data from dashboard endpoint
+  }, [location.state, showNotification]);
+
+  // Load dashboard data on component mount
+  useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        // Load data from consolidated endpoint
         const dashboardData = await fetchDashboardData();
         
-        // Set sessions from dashboard data
+        // Sort sessions by timestamp, most recent first
         const sortedSessions = [...dashboardData.sessions].sort((a, b) => 
           new Date(b.timestamp) - new Date(a.timestamp)
         );
@@ -73,7 +77,7 @@ const TeaLogger = () => {
         setSessions(sortedSessions);
         setTeas(dashboardData.teas);
         
-        // Extract recent tea names (already sorted by timestamp)
+        // Extract recent tea names
         const recentTeaNames = dashboardData.recentSessions
           .map(session => {
             if (session.teaId) {
@@ -87,17 +91,17 @@ const TeaLogger = () => {
         setRecentTeas([...new Set(recentTeaNames)]); // Deduplicate
       } catch (error) {
         console.error('Error loading dashboard data:', error);
+        showNotification('Error loading tea data');
       } finally {
         setIsLoading(false);
       }
     };
     
     loadData();
-  }, [location.state]);
+  }, [showNotification]);
   
-  // Add this useEffect for background sync
+  // Background sync check
   useEffect(() => {
-    // Check sync status on load and periodically
     const checkSyncStatus = async () => {
       try {
         const status = await getSyncStatus();
@@ -108,8 +112,8 @@ const TeaLogger = () => {
         if (useGoogleDrive && status.drive_dirty) {
           await forceSync();
           // Refresh sessions after sync
-          const sessions = await fetchSessions(true);
-          setSessions(sessions);
+          const dashboardData = await fetchDashboardData(true);
+          setSessions(dashboardData.sessions);
         }
       } catch (error) {
         console.error('Error checking sync status:', error);
@@ -123,8 +127,8 @@ const TeaLogger = () => {
     return () => clearInterval(intervalId);
   }, []);
 
-  // Function to parse natural language input
-  const parseTeaInput = (input) => {
+  // Parse natural language input for tea
+  const parseTeaInput = useCallback((input) => {
     const result = {
       name: '',
       vendor: '',
@@ -172,42 +176,22 @@ const TeaLogger = () => {
     result.name = tokens.join(' ');
     
     return result;
-  };
+  }, []);
 
-  const startNewSession = async () => {
-    if (!currentTea.trim()) return;
+  // Start a new tea session
+  const startNewSession = useCallback(async () => {
+    if (!inputForm.teaInput?.trim()) return;
     
     try {
       // Parse the input
-      const parsedInput = parseTeaInput(currentTea);
+      const parsedInput = parseTeaInput(inputForm.teaInput);
       
-      // Check if this tea already exists in the collection
-      let teaId = null;
-      const existingTea = fetchTeaByName(parsedInput.name);
-      
-      if (existingTea) {
-        // Use existing tea
-        teaId = existingTea.id;
-      } else {
-        // Create a new tea in the collection
-        const newTea = createTea({
-          name: parsedInput.name,
-          type: '',  // Can be set later in tea details
-          vendor: parsedInput.vendor || '',
-          year: parsedInput.age || '',
-          notes: ''
-        });
-        teaId = newTea.id;
-      }
-      
-      // Create a new session with reference to the tea
+      // Create a new session
       const newSession = {
         id: Date.now().toString(),
-        teaId: teaId,
-        name: parsedInput.name, // Keep for backward compatibility
+        name: parsedInput.name,
         timestamp: new Date().toISOString(),
         notes: '',
-        // Include these for display purposes and backward compatibility
         vendor: parsedInput.vendor || '',
         type: '',
         age: parsedInput.age || ''
@@ -218,7 +202,7 @@ const TeaLogger = () => {
       
       // Update state
       setSessions([savedSession, ...sessions]);
-      setCurrentTea('');
+      resetInput();
       
       // Update recent teas
       if (!recentTeas.includes(parsedInput.name)) {
@@ -227,50 +211,27 @@ const TeaLogger = () => {
       }
       
       // Show notification
-      setNotification('Tea session added successfully');
-      setTimeout(() => {
-        setNotification('');
-      }, 3000);
+      showNotification('Tea session added successfully');
     } catch (error) {
       console.error('Error creating session:', error);
-      setNotification('Error adding tea session');
-      setTimeout(() => {
-        setNotification('');
-      }, 3000);
+      showNotification('Error adding tea session');
     }
-  };
+  }, [inputForm.teaInput, parseTeaInput, sessions, recentTeas, resetInput, showNotification]);
 
-  const toggleDrawer = () => {
+  const toggleDrawer = useCallback(() => {
     setIsDrawerOpen(!isDrawerOpen);
-  };
+  }, [isDrawerOpen]);
 
-  const handleSuggestionClick = (teaName) => {
-    setCurrentTea(teaName);
+  const handleSuggestionClick = useCallback((teaName) => {
+    setInputValues({ teaInput: teaName });
     if (inputRef.current) {
       inputRef.current.focus();
     }
-  };
+  }, [setInputValues]);
 
-  const handleSessionClick = async (session) => {
-    try {
-      // First await the tea data
-      let tea;
-      if (session.teaId) {
-        tea = await fetchTeaById(session.teaId);
-      } else {
-        tea = await fetchTeaByName(session.name);
-      }
-      
-      // Then navigate with the resolved data
-      navigate(`/session/${session.id}`, { 
-        state: { tea } 
-      });
-    } catch (error) {
-      console.error('Error fetching tea data:', error);
-      // Navigate anyway, without the tea data
-      navigate(`/session/${session.id}`);
-    }
-  };
+  const handleSessionClick = useCallback((session) => {
+    navigate(`/session/${session.id}`);
+  }, [navigate]);
 
   return (
     <div className="app-container">
@@ -300,11 +261,12 @@ const TeaLogger = () => {
             <input
               ref={inputRef}
               type="text"
+              name="teaInput"
               className="hero-input"
               placeholder="What tea are you drinking now? (e.g. w2t Hot Brandy 2019)"
-              value={currentTea}
+              value={inputForm.teaInput}
               onChange={(e) => {
-                setCurrentTea(e.target.value);
+                handleInputChange(e);
                 setShowSuggestions(e.target.value.length > 0);
               }}
               onKeyDown={(e) => e.key === 'Enter' && startNewSession()}

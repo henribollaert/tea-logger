@@ -1,21 +1,35 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+// src/components/SessionDetails.js
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, Trash, ExternalLink } from 'lucide-react';
 import { fetchSessionDetails, updateSession, deleteSession } from '../api';
-import { fetchTeaById } from '../teaApi';
 import './SessionDetails.css';
+
+// Import custom hooks
+import { useNotification } from '../hooks/useNotification';
+import { useModal } from '../hooks/useModal';
+import { useForm } from '../hooks/useForm';
+
+// Import common components
+import ConfirmationModal from './common/ConfirmationModal';
 
 const SessionDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
+  
+  // Use custom hooks
+  const { notification, showNotification } = useNotification();
+  const { isOpen: showDeleteConfirm, openModal, closeModal } = useModal();
+  
+  // Component state
   const [session, setSession] = useState(null);
   const [tea, setTea] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [message, setMessage] = useState('');
+  
+  // Form for session notes
+  const { values: sessionForm, handleChange, setValues } = useForm({ notes: '' });
 
   useEffect(() => {
     const loadSessionDetails = async () => {
@@ -26,53 +40,43 @@ const SessionDetails = () => {
         
         setSession(data.session);
         setTea(data.tea);
+        
+        // Set form values
+        setValues({ notes: data.session.notes || '' });
       } catch (error) {
         console.error('Error loading session details:', error);
-        setMessage('Error loading session details');
+        showNotification('Error loading session details');
       } finally {
         setIsLoading(false);
       }
     };
     
     loadSessionDetails();
-  }, [id]);
+  }, [id, setValues, showNotification]);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    // Only allow changing notes in the session details
-    if (name === 'notes') {
-      setSession(prev => ({
-        ...prev,
-        [name]: value
-      }));
-    }
-  };
-
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     setIsSaving(true);
-    setMessage('');
     
     try {
       // Only update the notes field
-      const updatedSession = await updateSession(session.id, { notes: session.notes });
+      const updatedSession = await updateSession(session.id, { notes: sessionForm.notes });
       if (updatedSession) {
-        setMessage('Session notes updated successfully');
+        showNotification('Session notes updated successfully');
         setSession(updatedSession);
       } else {
-        setMessage('Failed to update session');
+        showNotification('Failed to update session');
       }
     } catch (error) {
       console.error('Error updating session:', error);
-      setMessage('Error updating session notes');
+      showNotification('Error updating session notes');
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [session, sessionForm.notes, showNotification]);
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     setIsDeleting(true);
-    setMessage('');
     
     try {
       // Delete the session
@@ -87,9 +91,9 @@ const SessionDetails = () => {
     } finally {
       setIsDeleting(false);
     }
-  };
+  }, [session, navigate]);
 
-  const handleTitleClick = () => {
+  const handleTitleClick = useCallback(() => {
     // Store the tea name or ID to focus on in collection
     if (tea) {
       if (tea.id) {
@@ -101,7 +105,7 @@ const SessionDetails = () => {
     } else {
       navigate('/collection');
     }
-  };
+  }, [tea, navigate]);
 
   if (isLoading) {
     return (
@@ -135,7 +139,7 @@ const SessionDetails = () => {
           </div>
         </header>
         <div className="main-content">
-          <div className="empty-state">{message || 'Session or tea not found'}</div>
+          <div className="empty-state">Session or tea not found</div>
         </div>
       </div>
     );
@@ -151,7 +155,7 @@ const SessionDetails = () => {
           <h1 className="app-title" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>Tea Logger</h1>
           <div className="action-buttons">
             <button 
-              onClick={() => setShowDeleteConfirm(true)} 
+              onClick={() => openModal()} 
               className="icon-button"
               title="Delete session"
             >
@@ -170,11 +174,11 @@ const SessionDetails = () => {
       </header>
       
       <div className="main-content">
+        {notification && (
+          <div className="notification">{notification}</div>
+        )}
+      
         <form className="session-form" onSubmit={handleSubmit}>
-          {message && (
-            <div className="form-message">{message}</div>
-          )}
-          
           <div className="session-tea-info">
             <div className="tea-header">
               <h2 className="tea-title">
@@ -208,7 +212,7 @@ const SessionDetails = () => {
             <textarea
               id="notes"
               name="notes"
-              value={session.notes || ''}
+              value={sessionForm.notes}
               onChange={handleChange}
               className="form-textarea"
               rows="4"
@@ -230,30 +234,14 @@ const SessionDetails = () => {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="modal-backdrop">
-          <div className="modal-container">
-            <h3 className="modal-title">Delete Session</h3>
-            <p className="modal-message">
-              Are you sure you want to delete this tea session? This action cannot be undone.
-            </p>
-            <div className="modal-actions">
-              <button 
-                className="cancel-button"
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={isDeleting}
-              >
-                Cancel
-              </button>
-              <button 
-                className="delete-button"
-                onClick={handleDelete}
-                disabled={isDeleting}
-              >
-                {isDeleting ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmationModal
+          title="Delete Session"
+          message="Are you sure you want to delete this tea session? This action cannot be undone."
+          onConfirm={handleDelete}
+          onCancel={closeModal}
+          confirmLabel={isDeleting ? "Deleting..." : "Delete"}
+          isProcessing={isDeleting}
+        />
       )}
     </div>
   );

@@ -5,20 +5,27 @@ import { ArrowLeft, Search, X } from 'lucide-react';
 import { fetchSessions, deleteSession } from '../api';
 import './AllSessions.css';
 
-// Import our common components
+// Import common components
 import SessionCard from './common/SessionCard';
 import ConfirmationModal from './common/ConfirmationModal';
 
+// Import custom hooks
+import { useNotification } from '../hooks/useNotification';
+import { useModal } from '../hooks/useModal';
+
 const AllSessions = () => {
   const navigate = useNavigate();
+  
+  // Use custom hooks
+  const { notification, showNotification } = useNotification();
+  const { isOpen: showDeleteConfirm, modalData: sessionToDelete, openModal, closeModal } = useModal();
+  
+  // Component state
   const [sessions, setSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('');
   const [sortBy, setSortBy] = useState('date-desc');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [sessionToDelete, setSessionToDelete] = useState(null);
-  const [notification, setNotification] = useState('');
 
   useEffect(() => {
     const loadSessions = async () => {
@@ -31,15 +38,16 @@ const AllSessions = () => {
         setSessions(sortedData);
       } catch (error) {
         console.error('Error loading sessions:', error);
+        showNotification('Error loading sessions');
       } finally {
         setIsLoading(false);
       }
     };
     
     loadSessions();
-  }, []);
+  }, [showNotification]);
 
-  // Memoize tea types to prevent recalculation
+  // Memoize tea types
   const teaTypes = useMemo(() => {
     const types = new Set();
     sessions.forEach(session => {
@@ -87,9 +95,8 @@ const AllSessions = () => {
 
   const handleDeleteClick = useCallback((e, session) => {
     e.stopPropagation(); // Prevent navigating to session details
-    setSessionToDelete(session);
-    setShowDeleteConfirm(true);
-  }, []);
+    openModal(session);
+  }, [openModal]);
 
   const handleDeleteSession = useCallback(async () => {
     if (!sessionToDelete) return;
@@ -101,17 +108,13 @@ const AllSessions = () => {
       setSessions(prev => prev.filter(s => s.id !== sessionToDelete.id));
       
       // Show notification
-      setNotification('Session deleted successfully');
-      setTimeout(() => setNotification(''), 3000);
+      showNotification('Session deleted successfully');
+      closeModal();
     } catch (error) {
       console.error('Error deleting session:', error);
-      setNotification('Error deleting session');
-      setTimeout(() => setNotification(''), 3000);
-    } finally {
-      setShowDeleteConfirm(false);
-      setSessionToDelete(null);
+      showNotification('Error deleting session');
     }
-  }, [sessionToDelete]);
+  }, [sessionToDelete, closeModal, showNotification]);
 
   const handleSessionClick = useCallback((session) => {
     navigate(`/session/${session.id}`);
@@ -221,10 +224,7 @@ const AllSessions = () => {
           title="Delete Session"
           message={`Are you sure you want to delete this session for "${sessionToDelete.name}"? This action cannot be undone.`}
           onConfirm={handleDeleteSession}
-          onCancel={() => {
-            setShowDeleteConfirm(false);
-            setSessionToDelete(null);
-          }}
+          onCancel={closeModal}
         />
       )}
     </div>

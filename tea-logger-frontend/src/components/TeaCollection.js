@@ -6,13 +6,42 @@ import { fetchDashboardData } from '../api';
 import { updateTea, createTea, deleteTea } from '../teaApi';
 import './TeaCollection.css';
 
-// Import our new components
+// Import common components
 import TeaCard from './common/TeaCard';
 import TeaForm from './common/TeaForm';
 import ConfirmationModal from './common/ConfirmationModal';
 
+// Import custom hooks
+import { useNotification } from '../hooks/useNotification';
+import { useModal } from '../hooks/useModal';
+import { useForm } from '../hooks/useForm';
+
 const TeaCollection = () => {
   const navigate = useNavigate();
+  
+  // Use custom hooks
+  const { notification, showNotification } = useNotification();
+  const { isOpen: showDeleteConfirm, modalData: teaToDelete, openModal, closeModal } = useModal();
+  
+  // Initial form state
+  const initialTea = {
+    id: null,
+    name: '',
+    type: '',
+    vendor: '',
+    year: '',
+    notes: ''
+  };
+  
+  // Form hook for tea form
+  const { 
+    values: newTea, 
+    handleChange: handleTeaChange, 
+    reset: resetTeaForm,
+    setValues: setNewTea 
+  } = useForm(initialTea);
+  
+  // Component state
   const [sessions, setSessions] = useState([]);
   const [teas, setTeas] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,19 +49,9 @@ const TeaCollection = () => {
   const [filterType, setFilterType] = useState('');
   const [isAddingTea, setIsAddingTea] = useState(false);
   const [editingTeaId, setEditingTeaId] = useState(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [teaToDelete, setTeaToDelete] = useState(null);
-  const [notification, setNotification] = useState('');
   const [expandedTea, setExpandedTea] = useState(null);
-  const [newTea, setNewTea] = useState({
-    id: null,
-    name: '',
-    type: '',
-    vendor: '',
-    year: '',
-    notes: ''
-  });
 
+  // Load data on component mount
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
@@ -79,15 +98,16 @@ const TeaCollection = () => {
         }
       } catch (error) {
         console.error('Error loading data:', error);
+        showNotification('Error loading tea collection');
       } finally {
         setIsLoading(false);
       }
     };
     
     loadData();
-  }, []);
+  }, [showNotification]);
 
-  // Memoize filtered teas to prevent recalculation on every render
+  // Memoize filtered teas
   const filteredTeas = useMemo(() => {
     let result = [...teas];
     
@@ -106,7 +126,7 @@ const TeaCollection = () => {
     return result;
   }, [teas, searchTerm, filterType]);
 
-  // Memoize tea types to prevent recalculation
+  // Memoize tea types
   const teaTypes = useMemo(() => {
     const types = new Set();
     teas.forEach(tea => {
@@ -115,17 +135,9 @@ const TeaCollection = () => {
     return ['', ...Array.from(types)].sort();
   }, [teas]);
 
-  // Use callbacks for event handlers
+  // Event handlers
   const clearSearch = useCallback(() => {
     setSearchTerm('');
-  }, []);
-
-  const handleTeaChange = useCallback((e) => {
-    const { name, value } = e.target;
-    setNewTea(prev => ({
-      ...prev,
-      [name]: value
-    }));
   }, []);
 
   const handleAddTea = useCallback(async () => {
@@ -149,24 +161,13 @@ const TeaCollection = () => {
       
       setTeas(prev => [...prev, teaWithStats]);
       setIsAddingTea(false);
-      setNotification('Tea added to collection');
-      setTimeout(() => setNotification(''), 3000);
-      
-      // Reset form
-      setNewTea({
-        id: null,
-        name: '',
-        type: '',
-        vendor: '',
-        year: '',
-        notes: ''
-      });
+      showNotification('Tea added to collection');
+      resetTeaForm();
     } catch (error) {
       console.error('Error adding tea:', error);
-      setNotification('Error adding tea to collection');
-      setTimeout(() => setNotification(''), 3000);
+      showNotification('Error adding tea to collection');
     }
-  }, [newTea]);
+  }, [newTea, showNotification, resetTeaForm]);
 
   const handleEditTea = useCallback((tea) => {
     setEditingTeaId(tea.id);
@@ -178,7 +179,7 @@ const TeaCollection = () => {
       year: tea.year || '',
       notes: tea.notes || ''
     });
-  }, []);
+  }, [setNewTea]);
 
   const handleUpdateTea = useCallback(async () => {
     if (!newTea.name.trim() || !editingTeaId) return;
@@ -206,52 +207,26 @@ const TeaCollection = () => {
         }));
         
         setEditingTeaId(null);
-        setNotification('Tea updated successfully');
-        setTimeout(() => {
-          setNotification('');
-        }, 3000);
-        
-        // Reset form
-        setNewTea({
-          id: null,
-          name: '',
-          type: '',
-          vendor: '',
-          year: '',
-          notes: ''
-        });
+        showNotification('Tea updated successfully');
+        resetTeaForm();
       } else {
-        setNotification('Error updating tea');
-        setTimeout(() => {
-          setNotification('');
-        }, 3000);
+        showNotification('Error updating tea');
       }
     } catch (error) {
       console.error('Error updating tea:', error);
-      setNotification('Error updating tea');
-      setTimeout(() => {
-        setNotification('');
-      }, 3000);
+      showNotification('Error updating tea');
     }
-  }, [newTea, editingTeaId]);
+  }, [newTea, editingTeaId, showNotification, resetTeaForm]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingTeaId(null);
-    setNewTea({
-      id: null,
-      name: '',
-      type: '',
-      vendor: '',
-      year: '',
-      notes: ''
-    });
-  }, []);
+    resetTeaForm();
+  }, [resetTeaForm]);
 
   const handleDeleteClick = useCallback((e, tea) => {
     e.stopPropagation();
-    setTeaToDelete(tea);
-    setShowDeleteConfirm(true);
-  }, []);
+    openModal(tea);
+  }, [openModal]);
 
   const handleDeleteTea = useCallback(async () => {
     if (!teaToDelete) return;
@@ -261,20 +236,16 @@ const TeaCollection = () => {
       
       if (success) {
         setTeas(prev => prev.filter(tea => tea.id !== teaToDelete.id));
-        setShowDeleteConfirm(false);
-        setTeaToDelete(null);
-        setNotification('Tea deleted from collection');
-        setTimeout(() => setNotification(''), 3000);
+        closeModal();
+        showNotification('Tea deleted from collection');
       } else {
-        setNotification('Error deleting tea');
-        setTimeout(() => setNotification(''), 3000);
+        showNotification('Error deleting tea');
       }
     } catch (error) {
       console.error('Error deleting tea:', error);
-      setNotification('Error deleting tea');
-      setTimeout(() => setNotification(''), 3000);
+      showNotification('Error deleting tea');
     }
-  }, [teaToDelete]);
+  }, [teaToDelete, closeModal, showNotification]);
 
   const toggleSessionHistory = useCallback((teaId) => {
     setExpandedTea(prevId => prevId === teaId ? null : teaId);
@@ -306,6 +277,9 @@ const TeaCollection = () => {
             onClick={() => {
               setIsAddingTea(!isAddingTea);
               setEditingTeaId(null);
+              if (!isAddingTea) {
+                resetTeaForm();
+              }
             }} 
             className="icon-button"
           >
@@ -406,10 +380,7 @@ const TeaCollection = () => {
           title="Delete Tea"
           message={`Are you sure you want to delete "${teaToDelete.name}" from your collection? This action cannot be undone.`}
           onConfirm={handleDeleteTea}
-          onCancel={() => {
-            setShowDeleteConfirm(false);
-            setTeaToDelete(null);
-          }}
+          onCancel={closeModal}
         />
       )}
     </div>
