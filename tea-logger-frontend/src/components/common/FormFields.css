@@ -1,0 +1,148 @@
+/* FormFields.css */
+.form-field {
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .form-label {
+    display: block;
+    margin-bottom: var(--spacing-xs);
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+  }
+  
+  .required-indicator {
+    color: #e53e3e;
+    margin-left: 0.25rem;
+  }
+  
+  .form-input,
+  .form-textarea,
+  .form-select {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    background-color: var(--card-color);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    line-height: 1.5;
+  }
+  
+  .form-input:focus,
+  .form-textarea:focus,
+  .form-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(102, 102, 102, 0.1);
+  }
+  
+  .form-textarea {
+    resize: vertical;
+    min-height: 100px;
+  }
+  
+  .form-help-text {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    margin-top: 0.25rem;
+  }
+  
+  .form-error-message {
+    font-size: 0.75rem;
+    color: #e53e3e;
+    margin-top: 0.25rem;
+  }
+  
+  .input-error {
+    border-color: #e53e3e;
+    background-color: rgba(229, 62, 62, 0.05);
+  }
+  
+  .input-error:focus {
+    border-color: #e53e3e;
+    box-shadow: 0 0 0 2px rgba(229, 62, 62, 0.1);
+  }
+  
+  /* Checkbox specific styles */
+  .checkbox-field {
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .checkbox-container {
+    display: flex;
+    align-items: center;
+  }
+  
+  .form-checkbox {
+    margin-right: 0.5rem;
+  }
+  
+  .checkbox-label {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    margin-bottom: 0;
+  }
+  
+  /* Submit button */
+  .submit-button {
+    padding: 0.625rem 1.25rem;
+    border-radius: var(--border-radius-sm);
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    font-weight: 500;
+    font-size: 0.813rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .submit-button:hover:not(:disabled) {
+    background-color: #555;
+  }
+  
+  .submit-button:disabled {
+    background-color: #aaa;
+    cursor: not-allowed;
+  }
+  
+  .submit-button.is-submitting {
+    position: relative;
+    padding-right: 2.5rem;
+  }
+  
+  .submit-button.is-submitting::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 1rem;
+    transform: translateY(-50%);
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spinner 0.8s linear infinite;
+  }
+  
+  @keyframes spinner {
+    to {
+      transform: translateY(-50%) rotate(360deg);
+    }
+  }
+  
+  /* Field transition animations */
+  .form-field {
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .has-error {
+    animation: shake 0.4s ease;
+  }
+  
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-5px); }
+    40%, 80% { transform: translateX(5px); }
+  }

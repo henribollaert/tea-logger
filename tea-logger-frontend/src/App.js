@@ -1,3 +1,4 @@
+// src/App.js - Enhanced with Error Boundary
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import './App.css';
@@ -7,6 +8,7 @@ import SessionDetails from './components/SessionDetails';
 import AllSessions from './components/AllSessions';
 import TeaCollection from './components/TeaCollection';
 import VendorManagement from './components/VendorManagement';
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 function App() {
   // Add Roboto font
@@ -25,16 +27,18 @@ function App() {
 
   return (
     <Router>
-      <div className="App">
-        <Routes>
-          <Route path="/" element={<TeaLogger />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/session/:id" element={<SessionDetails />} />
-          <Route path="/sessions" element={<AllSessions />} />
-          <Route path="/collection" element={<TeaCollection />} />
-          <Route path="/vendors" element={<VendorManagement />} />
-        </Routes>
-      </div>
+      <ErrorBoundary>
+        <div className="App">
+          <Routes>
+            <Route path="/" element={<TeaLogger />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/session/:id" element={<SessionDetails />} />
+            <Route path="/sessions" element={<AllSessions />} />
+            <Route path="/collection" element={<TeaCollection />} />
+            <Route path="/vendors" element={<VendorManagement />} />
+          </Routes>
+        </div>
+      </ErrorBoundary>
     </Router>
   );
 }

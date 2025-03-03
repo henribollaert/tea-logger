@@ -1,4 +1,4 @@
-// src/components/TeaCollection.js
+// src/components/TeaCollection.js (with skeleton loading states)
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, X, Plus } from 'lucide-react';
@@ -10,6 +10,8 @@ import './TeaCollection.css';
 import TeaCard from './common/TeaCard';
 import TeaForm from './common/TeaForm';
 import ConfirmationModal from './common/ConfirmationModal';
+import ErrorDisplay from './common/ErrorDisplay';
+import { SkeletonTeaList } from './common/Skeleton';
 
 // Import custom hooks
 import { useNotification } from '../hooks/useNotification';
@@ -45,6 +47,7 @@ const TeaCollection = () => {
   const [sessions, setSessions] = useState([]);
   const [teas, setTeas] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('');
   const [isAddingTea, setIsAddingTea] = useState(false);
@@ -55,6 +58,8 @@ const TeaCollection = () => {
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
+      setLoadError(null);
+      
       try {
         const dashboardData = await fetchDashboardData();
         
@@ -98,6 +103,7 @@ const TeaCollection = () => {
         }
       } catch (error) {
         console.error('Error loading data:', error);
+        setLoadError(error);
         showNotification('Error loading tea collection');
       } finally {
         setIsLoading(false);
@@ -106,6 +112,12 @@ const TeaCollection = () => {
     
     loadData();
   }, [showNotification]);
+
+  // Handle retry loading
+  const handleRetryLoading = useCallback(() => {
+    setLoadError(null);
+    fetchDashboardData();
+  }, []);
 
   // Memoize filtered teas
   const filteredTeas = useMemo(() => {
@@ -263,6 +275,55 @@ const TeaCollection = () => {
     }
   }, [expandedTea, handleEditTea, toggleSessionHistory]);
 
+  // Render content based on loading/error state
+  const renderContent = () => {
+    if (isLoading) {
+      // Show skeleton loading state
+      return <SkeletonTeaList count={5} />;
+    }
+    
+    if (loadError) {
+      // Show error state with retry option
+      return (
+        <ErrorDisplay 
+          error={loadError}
+          message="We couldn't load your tea collection"
+          onRetry={handleRetryLoading}
+          showHome={false}
+        />
+      );
+    }
+    
+    if (filteredTeas.length === 0) {
+      // Show empty state
+      return (
+        <div className="empty-state">
+          {searchTerm || filterType 
+            ? "No teas match your filters." 
+            : "Your collection is empty. Add some teas!"}
+        </div>
+      );
+    }
+    
+    // Show tea list
+    return (
+      <div className="tea-collection-list">
+        {filteredTeas.map(tea => (
+          <TeaCard
+            key={tea.id}
+            tea={tea}
+            onEditClick={() => handleEditTea(tea)}
+            onDeleteClick={handleDeleteClick}
+            onSessionHistoryToggle={toggleSessionHistory}
+            isExpanded={expandedTea === tea.id}
+            onSessionClick={handleSessionClick}
+            onTeaCardClick={() => handleTeaCardClick(tea)}
+          />
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -347,31 +408,8 @@ const TeaCollection = () => {
           </div>
         </div>
         
-        {/* Tea Collection List */}
-        <div className="tea-collection-list">
-          {isLoading ? (
-            <div className="loading-state">Loading your collection...</div>
-          ) : filteredTeas.length === 0 ? (
-            <div className="empty-state">
-              {searchTerm || filterType 
-                ? "No teas match your filters." 
-                : "Your collection is empty. Add some teas!"}
-            </div>
-          ) : (
-            filteredTeas.map(tea => (
-              <TeaCard
-                key={tea.id}
-                tea={tea}
-                onEditClick={() => handleEditTea(tea)}
-                onDeleteClick={handleDeleteClick}
-                onSessionHistoryToggle={toggleSessionHistory}
-                isExpanded={expandedTea === tea.id}
-                onSessionClick={handleSessionClick}
-                onTeaCardClick={() => handleTeaCardClick(tea)}
-              />
-            ))
-          )}
-        </div>
+        {/* Tea Collection List with loading states */}
+        {renderContent()}
       </div>
       
       {/* Delete Confirmation Modal */}

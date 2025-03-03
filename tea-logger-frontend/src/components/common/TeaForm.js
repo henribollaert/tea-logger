@@ -1,105 +1,149 @@
-// src/components/common/TeaForm.js
-import React from 'react';
+// src/components/common/TeaForm.js - Enhanced with form validation
+import React, { useEffect } from 'react';
+import { useForm } from '../../hooks/useForm';
+import { 
+  TextField, 
+  SelectField, 
+  TextAreaField,
+  SubmitButton 
+} from './FormFields';
 
 const TeaForm = React.memo(({ 
   tea, 
-  onChange, 
   onSave, 
   onCancel, 
   isEditing = false 
 }) => {
+  // Validation schema
+  const validationSchema = {
+    name: {
+      required: { message: 'Tea name is required' },
+      minLength: { value: 1, message: 'Name must not be empty' }
+    }
+  };
+  
+  // Tea type options
+  const teaTypeOptions = [
+    { value: '', label: 'Select a type' },
+    { value: 'White', label: 'White' },
+    { value: 'Green', label: 'Green' },
+    { value: 'Yellow', label: 'Yellow' },
+    { value: 'Oolong', label: 'Oolong' },
+    { value: 'Black', label: 'Black' },
+    { value: 'Sheng Puer', label: 'Sheng Puer' },
+    { value: 'Shu Puer', label: 'Shu Puer' },
+    { value: 'Herbal', label: 'Herbal' },
+    { value: 'Other', label: 'Other' }
+  ];
+  
+  // Initialize form with the provided tea data
+  const { 
+    values,
+    errors,
+    touched,
+    handleChange,
+    handleBlur,
+    handleSubmit,
+    isSubmitting,
+    isDirty,
+    isValid,
+    setValues
+  } = useForm(tea, validationSchema);
+  
+  // Update form values when tea prop changes
+  useEffect(() => {
+    setValues(tea);
+  }, [tea, setValues]);
+  
+  // Handle form submission
+  const submitForm = async (formData) => {
+    await onSave(formData);
+  };
+  
   return (
     <div className="tea-form">
       <h3 className="form-title">
         {isEditing ? 'Edit Tea' : 'Add New Tea'}
       </h3>
       
-      <div className="form-group">
-        <label htmlFor="name">Tea Name*</label>
-        <input
-          type="text"
-          id="name"
+      <form onSubmit={handleSubmit(submitForm)}>
+        <TextField
+          label="Tea Name"
           name="name"
-          value={tea.name}
-          onChange={onChange}
-          className="form-input"
+          value={values.name}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          error={errors.name}
+          touched={touched.name}
           required
+          placeholder="Enter tea name"
         />
-      </div>
-      
-      <div className="form-group">
-        <label htmlFor="type">Tea Type</label>
-        <select
-          id="type"
+        
+        <SelectField
+          label="Tea Type"
           name="type"
-          value={tea.type}
-          onChange={onChange}
-          className="form-select"
-        >
-          <option value="">Select a type</option>
-          <option value="White">White</option>
-          <option value="Green">Green</option>
-          <option value="Yellow">Yellow</option>
-          <option value="Oolong">Oolong</option>
-          <option value="Black">Black</option>
-          <option value="Sheng Puer">Sheng Puer</option>
-          <option value="Shu Puer">Shu Puer</option>
-          <option value="Herbal">Herbal</option>
-          <option value="Other">Other</option>
-        </select>
-      </div>
-      
-      <div className="form-group">
-        <label htmlFor="vendor">Vendor</label>
-        <input
-          type="text"
-          id="vendor"
+          value={values.type}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          error={errors.type}
+          touched={touched.type}
+          options={teaTypeOptions}
+          helpText="Select the type of tea"
+        />
+        
+        <TextField
+          label="Vendor"
           name="vendor"
-          value={tea.vendor}
-          onChange={onChange}
-          className="form-input"
+          value={values.vendor}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          error={errors.vendor}
+          touched={touched.vendor}
+          placeholder="Tea vendor/producer"
         />
-      </div>
-      
-      <div className="form-group">
-        <label htmlFor="year">Year/Age</label>
-        <input
-          type="text"
-          id="year"
+        
+        <TextField
+          label="Year/Age"
           name="year"
-          value={tea.year}
-          onChange={onChange}
-          className="form-input"
+          value={values.year}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          error={errors.year}
+          touched={touched.year}
+          placeholder="Production year or age"
+          helpText="e.g., 2019, 15 years, etc."
         />
-      </div>
-      
-      <div className="form-group">
-        <label htmlFor="notes">Notes</label>
-        <textarea
-          id="notes"
+        
+        <TextAreaField
+          label="Notes"
           name="notes"
-          value={tea.notes}
-          onChange={onChange}
-          className="form-textarea"
-          rows="3"
-        ></textarea>
-      </div>
-      
-      <div className="form-actions">
-        <button 
-          className="cancel-button"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-        <button 
-          className="save-button"
-          onClick={onSave}
-          disabled={!tea.name.trim()}
-        >
-          {isEditing ? 'Update Tea' : 'Add Tea'}
-        </button>
-      </div>
+          value={values.notes}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          error={errors.notes}
+          touched={touched.notes}
+          placeholder="Additional notes about this tea"
+          rows={3}
+        />
+        
+        <div className="form-actions">
+          <button 
+            type="button"
+            className="cancel-button"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          
+          <SubmitButton
+            isSubmitting={isSubmitting}
+            isValid={isValid}
+            isDirty={isDirty}
+          >
+            {isEditing ? 'Update Tea' : 'Add Tea'}
+          </SubmitButton>
+        </div>
+      </form>
     </div>
   );
 });

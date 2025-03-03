@@ -1,0 +1,127 @@
+/* Skeleton.css - Loading state animations and styling */
+
+@keyframes pulse {
+    0% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 0.8;
+    }
+    100% {
+      opacity: 0.6;
+    }
+  }
+  
+  .skeleton-item {
+    background-color: #eeeeee;
+    border-radius: var(--border-radius-sm);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  
+  /* Generic sizes */
+  .skeleton-title {
+    height: 1.25rem;
+    width: 70%;
+    margin-bottom: 0.5rem;
+  }
+  
+  .skeleton-tag {
+    height: 1rem;
+    width: 4rem;
+    margin-right: 0.5rem;
+    display: inline-block;
+  }
+  
+  .skeleton-stat {
+    height: 1rem;
+    width: 5rem;
+    margin-right: 1rem;
+  }
+  
+  .skeleton-timestamp {
+    height: 0.875rem;
+    width: 5rem;
+  }
+  
+  .skeleton-notes {
+    height: 3rem;
+    width: 100%;
+    margin-top: 0.75rem;
+  }
+  
+  .skeleton-textarea {
+    height: 8rem;
+    width: 100%;
+    margin-top: 1rem;
+  }
+  
+  .skeleton-divider {
+    height: 1px;
+    width: 100%;
+    background-color: var(--border-color);
+    margin: 1rem 0;
+  }
+  
+  /* Tea card skeleton */
+  .skeleton-tea-card {
+    background-color: var(--card-color);
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-sm);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .skeleton-tea-header {
+    display: flex;
+    justify-content: space-between;
+  }
+  
+  .skeleton-content {
+    flex: 1;
+  }
+  
+  .skeleton-tags {
+    display: flex;
+    margin-bottom: 0.75rem;
+  }
+  
+  .skeleton-stats {
+    display: flex;
+    margin-top: 0.5rem;
+  }
+  
+  /* Session card skeleton */
+  .skeleton-session-card {
+    background-color: var(--card-color);
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-sm);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+  }
+  
+  .skeleton-session-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+  }
+  
+  /* Session details skeleton */
+  .skeleton-session-details {
+    background-color: var(--card-color);
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-sm);
+    padding: var(--spacing-lg);
+  }
+  
+  .skeleton-tea-info {
+    margin-bottom: 1rem;
+  }
+  
+  /* Lists */
+  .skeleton-tea-list, 
+  .skeleton-session-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }

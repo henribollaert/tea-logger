@@ -1,4 +1,4 @@
-// src/components/SessionDetails.js
+// src/components/SessionDetails.js (with skeleton loading states)
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, Trash, ExternalLink } from 'lucide-react';
@@ -12,6 +12,9 @@ import { useForm } from '../hooks/useForm';
 
 // Import common components
 import ConfirmationModal from './common/ConfirmationModal';
+import ErrorDisplay from './common/ErrorDisplay';
+import { SkeletonSessionDetails } from './common/Skeleton';
+import { TextAreaField, SubmitButton } from './common/FormFields';
 
 const SessionDetails = () => {
   const { id } = useParams();
@@ -25,15 +28,35 @@ const SessionDetails = () => {
   const [session, setSession] = useState(null);
   const [tea, setTea] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   
+  // Validation schema
+  const validationSchema = {
+    notes: {
+      maxLength: { value: 1000, message: 'Notes must be less than 1000 characters' }
+    }
+  };
+  
   // Form for session notes
-  const { values: sessionForm, handleChange, setValues } = useForm({ notes: '' });
+  const { 
+    values: sessionForm, 
+    handleChange, 
+    handleBlur,
+    handleSubmit, 
+    errors,
+    touched,
+    isValid,
+    isDirty,
+    setValues 
+  } = useForm({ notes: '' }, validationSchema);
 
   useEffect(() => {
     const loadSessionDetails = async () => {
       setIsLoading(true);
+      setLoadError(null);
+      
       try {
         // Use the consolidated endpoint
         const data = await fetchSessionDetails(id);
@@ -45,6 +68,7 @@ const SessionDetails = () => {
         setValues({ notes: data.session.notes || '' });
       } catch (error) {
         console.error('Error loading session details:', error);
+        setLoadError(error);
         showNotification('Error loading session details');
       } finally {
         setIsLoading(false);
@@ -54,13 +78,17 @@ const SessionDetails = () => {
     loadSessionDetails();
   }, [id, setValues, showNotification]);
 
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
+  const handleRetryLoading = useCallback(() => {
+    setLoadError(null);
+    window.location.reload();
+  }, []);
+
+  const saveSession = useCallback(async (formData) => {
     setIsSaving(true);
     
     try {
       // Only update the notes field
-      const updatedSession = await updateSession(session.id, { notes: sessionForm.notes });
+      const updatedSession = await updateSession(session.id, { notes: formData.notes });
       if (updatedSession) {
         showNotification('Session notes updated successfully');
         setSession(updatedSession);
@@ -70,10 +98,11 @@ const SessionDetails = () => {
     } catch (error) {
       console.error('Error updating session:', error);
       showNotification('Error updating session notes');
+      throw error; // Allow form error handling to catch this
     } finally {
       setIsSaving(false);
     }
-  }, [session, sessionForm.notes, showNotification]);
+  }, [session, showNotification]);
 
   const handleDelete = useCallback(async () => {
     setIsDeleting(true);
@@ -93,7 +122,9 @@ const SessionDetails = () => {
     }
   }, [session, navigate]);
 
-  const handleTitleClick = useCallback(() => {
+  const handleTitleClick = useCallback((e) => {
+    e.preventDefault();
+    
     // Store the tea name or ID to focus on in collection
     if (tea) {
       if (tea.id) {
@@ -107,6 +138,7 @@ const SessionDetails = () => {
     }
   }, [tea, navigate]);
 
+  // Render different states
   if (isLoading) {
     return (
       <div className="app-container">
@@ -120,7 +152,30 @@ const SessionDetails = () => {
           </div>
         </header>
         <div className="main-content">
-          <div className="loading-state">Loading session details...</div>
+          <SkeletonSessionDetails />
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="app-container">
+        <header className="app-header">
+          <div className="header-container">
+            <button onClick={() => navigate(-1)} className="icon-button">
+              <ArrowLeft size={24} />
+            </button>
+            <h1 className="app-title" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>Tea Logger</h1>
+            <div className="spacer"></div>
+          </div>
+        </header>
+        <div className="main-content">
+          <ErrorDisplay
+            error={loadError}
+            message="We couldn't load the session details"
+            onRetry={handleRetryLoading}
+          />
         </div>
       </div>
     );
@@ -161,14 +216,6 @@ const SessionDetails = () => {
             >
               <Trash size={24} />
             </button>
-            <button 
-              onClick={handleSubmit} 
-              className="icon-button"
-              disabled={isSaving}
-              title="Save changes"
-            >
-              <Save size={24} />
-            </button>
           </div>
         </div>
       </header>
@@ -178,17 +225,14 @@ const SessionDetails = () => {
           <div className="notification">{notification}</div>
         )}
       
-        <form className="session-form" onSubmit={handleSubmit}>
+        <form className="session-form" onSubmit={handleSubmit(saveSession)}>
           <div className="session-tea-info">
             <div className="tea-header">
               <h2 className="tea-title">
                 {tea.name}
                 <button
                   className="link-to-tea"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleTitleClick();
-                  }}
+                  onClick={handleTitleClick}
                   title="View in tea collection"
                 >
                   <ExternalLink size={16} />
@@ -207,27 +251,27 @@ const SessionDetails = () => {
           
           <div className="form-divider"></div>
           
-          <div className="form-group">
-            <label htmlFor="notes">Tasting Notes</label>
-            <textarea
-              id="notes"
-              name="notes"
-              value={sessionForm.notes}
-              onChange={handleChange}
-              className="form-textarea"
-              rows="4"
-              placeholder="Record your impressions, flavors, aromas..."
-            ></textarea>
-          </div>
+          <TextAreaField
+            label="Tasting Notes"
+            name="notes"
+            value={sessionForm.notes}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            error={errors.notes}
+            touched={touched.notes}
+            rows={4}
+            placeholder="Record your impressions, flavors, aromas..."
+            helpText="Share your thoughts about this tea session"
+          />
           
           <div className="session-actions">
-            <button 
-              type="submit"
-              className="save-button"
-              disabled={isSaving}
+            <SubmitButton 
+              isSubmitting={isSaving}
+              isValid={isValid}
+              isDirty={isDirty}
             >
-              {isSaving ? 'Saving...' : 'Save Notes'}
-            </button>
+              Save Notes
+            </SubmitButton>
           </div>
         </form>
       </div>

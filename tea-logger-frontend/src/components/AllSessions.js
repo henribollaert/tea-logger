@@ -1,4 +1,4 @@
-// src/components/AllSessions.js
+// src/components/AllSessions.js (with skeleton loading states)
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, X } from 'lucide-react';
@@ -8,6 +8,8 @@ import './AllSessions.css';
 // Import common components
 import SessionCard from './common/SessionCard';
 import ConfirmationModal from './common/ConfirmationModal';
+import ErrorDisplay from './common/ErrorDisplay';
+import { SkeletonSessionList } from './common/Skeleton';
 
 // Import custom hooks
 import { useNotification } from '../hooks/useNotification';
@@ -23,6 +25,7 @@ const AllSessions = () => {
   // Component state
   const [sessions, setSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('');
   const [sortBy, setSortBy] = useState('date-desc');
@@ -30,6 +33,8 @@ const AllSessions = () => {
   useEffect(() => {
     const loadSessions = async () => {
       setIsLoading(true);
+      setLoadError(null);
+      
       try {
         const data = await fetchSessions();
         const sortedData = [...data].sort((a, b) => 
@@ -38,6 +43,7 @@ const AllSessions = () => {
         setSessions(sortedData);
       } catch (error) {
         console.error('Error loading sessions:', error);
+        setLoadError(error);
         showNotification('Error loading sessions');
       } finally {
         setIsLoading(false);
@@ -46,6 +52,11 @@ const AllSessions = () => {
     
     loadSessions();
   }, [showNotification]);
+
+  const handleRetryLoading = useCallback(() => {
+    setLoadError(null);
+    fetchSessions();
+  }, []);
 
   // Memoize tea types
   const teaTypes = useMemo(() => {
@@ -119,6 +130,47 @@ const AllSessions = () => {
   const handleSessionClick = useCallback((session) => {
     navigate(`/session/${session.id}`);
   }, [navigate]);
+
+  // Render different content based on state
+  const renderContent = () => {
+    if (isLoading) {
+      return <SkeletonSessionList count={6} />;
+    }
+    
+    if (loadError) {
+      return (
+        <ErrorDisplay 
+          error={loadError}
+          message="We couldn't load your sessions"
+          onRetry={handleRetryLoading}
+          showHome={false}
+        />
+      );
+    }
+    
+    if (filteredSessions.length === 0) {
+      return (
+        <div className="empty-state">
+          {searchTerm || filterType 
+            ? "No sessions match your filters." 
+            : "No tea sessions recorded yet."}
+        </div>
+      );
+    }
+    
+    return (
+      <div className="all-sessions-list">
+        {filteredSessions.map(session => (
+          <SessionCard
+            key={session.id}
+            session={session}
+            onSessionClick={handleSessionClick}
+            onDeleteClick={handleDeleteClick}
+          />
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="app-container">
@@ -195,27 +247,8 @@ const AllSessions = () => {
           </div>
         </div>
         
-        {/* Sessions List */}
-        <div className="all-sessions-list">
-          {isLoading ? (
-            <div className="loading-state">Loading sessions...</div>
-          ) : filteredSessions.length === 0 ? (
-            <div className="empty-state">
-              {searchTerm || filterType 
-                ? "No sessions match your filters." 
-                : "No tea sessions recorded yet."}
-            </div>
-          ) : (
-            filteredSessions.map(session => (
-              <SessionCard
-                key={session.id}
-                session={session}
-                onSessionClick={handleSessionClick}
-                onDeleteClick={handleDeleteClick}
-              />
-            ))
-          )}
-        </div>
+        {/* Sessions List with loading states */}
+        {renderContent()}
       </div>
       
       {/* Delete Confirmation Modal */}
