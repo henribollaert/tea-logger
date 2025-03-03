@@ -152,27 +152,40 @@ export const createSession = async (sessionData) => {
     if (!teaId && teaName) {
       // Try to find by name
       console.log('Trying to find tea by name:', teaName);
-      const existingTea = await fetchTeaByName(teaName);
-      
-      if (existingTea && existingTea.id) {
-        console.log('Found existing tea:', existingTea);
-        teaId = existingTea.id;
-      } else {
+      try {
+        const existingTea = await fetchTeaByName(teaName);
+        
+        if (existingTea && existingTea.id) {
+          console.log('Found existing tea:', existingTea);
+          teaId = existingTea.id;
+        } else {
+          throw new Error('Tea not found'); // Force creation of new tea
+        }
+      } catch (error) {
+        console.log('Tea not found, creating new tea');
         // Create new tea
-        console.log('Creating new tea for session');
-        const newTea = await createTea({
+        const newTeaData = {
           name: teaName,
           type: sessionData.type || '',
           vendor: sessionData.vendor || '',
           year: sessionData.age || '',
           notes: ''  // Session notes shouldn't be stored with the tea
-        });
+        };
         
-        if (newTea && newTea.id) {
-          console.log('New tea created:', newTea);
-          teaId = newTea.id;
-        } else {
-          console.error('Failed to create tea, using local ID');
+        console.log('Creating new tea with data:', newTeaData);
+        
+        try {
+          const newTea = await createTea(newTeaData);
+          
+          if (newTea && newTea.id) {
+            console.log('New tea created successfully:', newTea);
+            teaId = newTea.id;
+          } else {
+            console.error('Failed to create tea, using local ID');
+            teaId = `local-${Date.now()}`;
+          }
+        } catch (createError) {
+          console.error('Error creating tea:', createError);
           teaId = `local-${Date.now()}`;
         }
       }
@@ -229,7 +242,21 @@ export const createSession = async (sessionData) => {
     }
   } catch (error) {
     console.error('Error creating session:', error);
-    return sessionData;
+    
+    // Create a session anyway as a last resort
+    const fallbackSession = {
+      ...sessionData,
+      id: Date.now().toString(),
+      timestamp: sessionData.timestamp || new Date().toISOString()
+    };
+    
+    // Store in local storage
+    const cachedSessions = localStorage.getItem('cachedSessions');
+    let sessions = cachedSessions ? JSON.parse(cachedSessions) : [];
+    sessions = [fallbackSession, ...sessions];
+    localStorage.setItem('cachedSessions', JSON.stringify(sessions));
+    
+    return fallbackSession;
   }
 };
 

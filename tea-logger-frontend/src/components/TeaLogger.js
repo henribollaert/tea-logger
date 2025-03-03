@@ -1,4 +1,4 @@
-// src/components/TeaLogger.js - Enhanced with Form Fields
+// src/components/TeaLogger.js - Fixed missing plus button and improved input handling
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { PlusCircle, Clock, Menu, X, ChevronDown } from 'lucide-react';
@@ -10,9 +10,8 @@ import { useNotification } from '../hooks/useNotification';
 import { useForm } from '../hooks/useForm';
 
 // Import common components
-import { TextField } from './common/FormFields';
-import { SkeletonSessionList } from './common/Skeleton';
 import ErrorDisplay from './common/ErrorDisplay';
+import { SkeletonSessionList } from './common/Skeleton';
 
 // Known vendors and their abbreviations
 const KNOWN_VENDORS = {
@@ -76,6 +75,7 @@ const TeaLogger = () => {
       
       try {
         const dashboardData = await fetchDashboardData();
+        console.log('Dashboard data loaded:', dashboardData);
         
         // Sort sessions by timestamp, most recent first
         const sortedSessions = [...dashboardData.sessions].sort((a, b) => 
@@ -149,12 +149,18 @@ const TeaLogger = () => {
     const storedVendors = localStorage.getItem('teaVendors');
     
     if (storedVendors) {
-      const vendors = JSON.parse(storedVendors);
-      vendors.forEach(vendor => {
-        vendor.aliases.forEach(alias => {
-          vendorAliases[alias.toLowerCase()] = vendor.name;
+      try {
+        const vendors = JSON.parse(storedVendors);
+        vendors.forEach(vendor => {
+          if (vendor.aliases && Array.isArray(vendor.aliases)) {
+            vendor.aliases.forEach(alias => {
+              vendorAliases[alias.toLowerCase()] = vendor.name;
+            });
+          }
         });
-      });
+      } catch (error) {
+        console.warn('Error parsing vendor aliases:', error);
+      }
     } else {
       // Fallback to hardcoded vendors
       vendorAliases = KNOWN_VENDORS;
@@ -195,11 +201,20 @@ const TeaLogger = () => {
 
   // Start a new tea session
   const startNewSession = useCallback(async () => {
-    if (!inputForm.teaInput?.trim()) return;
+    if (!inputForm.teaInput?.trim()) {
+      showNotification('Please enter a tea name');
+      return;
+    }
     
     try {
       // Parse the input
       const parsedInput = parseTeaInput(inputForm.teaInput);
+      console.log('Parsed input:', parsedInput);
+      
+      if (!parsedInput.name) {
+        showNotification('Please enter a tea name');
+        return;
+      }
       
       // Create a new session
       const newSession = {
@@ -212,8 +227,11 @@ const TeaLogger = () => {
         age: parsedInput.age || ''
       };
       
+      console.log('Creating new session:', newSession);
+      
       // Save the session
       const savedSession = await createSession(newSession);
+      console.log('Session created:', savedSession);
       
       // Update state
       setSessions([savedSession, ...sessions]);
@@ -227,11 +245,19 @@ const TeaLogger = () => {
       
       // Show notification
       showNotification('Tea session added successfully');
+      
+      // Refresh the dashboard data
+      const dashboardData = await fetchDashboardData(true);
+      const sortedSessions = [...dashboardData.sessions].sort((a, b) => 
+        new Date(b.timestamp) - new Date(a.timestamp)
+      );
+      setSessions(sortedSessions);
+      
     } catch (error) {
       console.error('Error creating session:', error);
       showNotification('Error adding tea session');
     }
-  }, [inputForm.teaInput, parseTeaInput, sessions, recentTeas, resetInput, showNotification]);
+  }, [inputForm.teaInput, parseTeaInput, sessions, recentTeas, resetInput, showNotification, fetchDashboardData]);
 
   const toggleDrawer = useCallback(() => {
     setIsDrawerOpen(!isDrawerOpen);
@@ -247,6 +273,13 @@ const TeaLogger = () => {
   const handleSessionClick = useCallback((session) => {
     navigate(`/session/${session.id}`);
   }, [navigate]);
+  
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      startNewSession();
+    }
+  }, [startNewSession]);
 
   // Render content based on state
   const renderContent = () => {
@@ -340,26 +373,25 @@ const TeaLogger = () => {
         {/* Hero Section with Quick Add */}
         <div className="hero-section">
           <div className="input-container">
-            {/* Updated to use the new TextField component */}
-            <TextField
-              name="teaInput"
-              value={inputForm.teaInput}
-              onChange={handleInputChange}
-              placeholder="What tea are you drinking now? (e.g. w2t Hot Brandy 2019)"
-              onKeyDown={(e) => e.key === 'Enter' && startNewSession()}
+            <input
+              type="text"
               className="hero-input"
+              placeholder="What tea are you drinking now? (e.g. w2t Hot Brandy 2019)"
+              value={inputForm.teaInput}
+              onChange={(e) => handleInputChange({
+                target: { name: 'teaInput', value: e.target.value }
+              })}
+              onKeyDown={handleKeyDown}
               ref={inputRef}
-              icon={
-                <button
-                  onClick={startNewSession}
-                  className="hero-button"
-                  aria-label="Add tea session"
-                  disabled={!inputForm.teaInput?.trim()}
-                >
-                  <PlusCircle size={20} />
-                </button>
-              }
             />
+            <button
+              onClick={startNewSession}
+              className="hero-button"
+              aria-label="Add tea session"
+              disabled={!inputForm.teaInput?.trim()}
+            >
+              <PlusCircle size={20} />
+            </button>
           </div>
           
           {/* Suggestions */}

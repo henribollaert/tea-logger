@@ -201,14 +201,33 @@ export const fetchTeaByName = async (name) => {
 
 // Create a new tea
 export const createTea = async (teaData) => {
+  // Ensure we have required data
+  if (!teaData || !teaData.name || !teaData.name.trim()) {
+    console.error('Cannot create tea: missing name');
+    return null;
+  }
+  
   try {
     // First check if we already have this tea in the cache
     if (teaCache) {
-      const existingTea = teaCache.find(tea => tea.name.toLowerCase() === teaData.name.toLowerCase());
+      const existingTea = teaCache.find(tea => 
+        tea.name.toLowerCase() === teaData.name.toLowerCase()
+      );
       if (existingTea) {
         console.log('Found existing tea in cache:', existingTea);
         return existingTea;
       }
+    }
+    
+    // Also check localStorage to prevent duplicates
+    const localTeas = JSON.parse(localStorage.getItem('teaCollection') || '[]');
+    const existingLocalTea = localTeas.find(tea => 
+      tea.name.toLowerCase() === teaData.name.toLowerCase()
+    );
+    
+    if (existingLocalTea) {
+      console.log('Found existing tea in localStorage:', existingLocalTea);
+      return existingLocalTea;
     }
     
     // Ensure a vendor is properly normalized and set (convert aliases to full name)
@@ -218,67 +237,85 @@ export const createTea = async (teaData) => {
     
     console.log('Sending create tea request with data:', teaData);
     
-    // Create tea using the API
-    const response = await fetch(addStorageParam(`${API_URL}/teas`), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(teaData),
-    });
+    // Generate a new ID that will be used even if server call fails
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     
-    if (!response.ok) {
-      throw new Error(`Failed to create tea: ${response.status}`);
-    }
-    
-    const newTea = await response.json();
-    console.log('Created tea response:', newTea);
-    
-    // Log the operation
-    logTeaOperation('create', teaData, newTea);
-    
-    // Update the cache
-    if (teaCache) {
-      teaCache.push(newTea);
-    } else {
-      // Initialize cache if it doesn't exist
-      await fetchTeas(true);
-    }
-    
-    // Update local cache
-    const teas = JSON.parse(localStorage.getItem('teaCollection') || '[]');
-    teas.push(newTea);
-    localStorage.setItem('teaCollection', JSON.stringify(teas));
-    
-    return newTea;
-  } catch (error) {
-    console.error('Error creating tea:', error);
-    
-    // Create tea in local storage as fallback
-    const teas = JSON.parse(localStorage.getItem('teaCollection') || '[]');
-    
-    // Check if tea with this name already exists
-    const existingTea = teas.find(t => t.name.toLowerCase() === teaData.name.toLowerCase());
-    
-    if (existingTea) {
-      return existingTea;
-    }
-    
-    // Generate a unique ID for local storage
-    const newId = `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    
-    // Create new tea with ID
-    const newTea = {
+    // Create a full tea object
+    const newTeaData = {
       ...teaData,
-      id: newId,
+      id: tempId,
       created: new Date().toISOString()
     };
     
-    console.log('Creating tea in local storage:', newTea);
-    teas.push(newTea);
+    // Create tea using the API
+    try {
+      const response = await fetch(addStorageParam(`${API_URL}/teas`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(teaData),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to create tea: ${response.status}`);
+      }
+      
+      const newTea = await response.json();
+      console.log('Created tea response:', newTea);
+      
+      // Log the operation
+      logTeaOperation('create', teaData, newTea);
+      
+      // Update the cache
+      if (teaCache) {
+        teaCache.push(newTea);
+      } else {
+        // Initialize cache if it doesn't exist
+        await fetchTeas(true);
+      }
+      
+      // Update local cache
+      const teas = JSON.parse(localStorage.getItem('teaCollection') || '[]');
+      teas.push(newTea);
+      localStorage.setItem('teaCollection', JSON.stringify(teas));
+      
+      return newTea;
+    } catch (error) {
+      console.error('Error creating tea on server:', error);
+      
+      // Create tea in local storage as fallback since the server request failed
+      console.log('Creating tea in local storage as fallback:', newTeaData);
+      
+      // Update local cache
+      const teas = JSON.parse(localStorage.getItem('teaCollection') || '[]');
+      teas.push(newTeaData);
+      localStorage.setItem('teaCollection', JSON.stringify(teas));
+      
+      // Update the cache
+      if (teaCache) {
+        teaCache.push(newTeaData);
+      }
+      
+      return newTeaData;
+    }
+  } catch (error) {
+    console.error('Error in createTea:', error);
+    
+    // Create tea in local storage as a last resort
+    const fallbackTea = {
+      ...teaData,
+      id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      created: new Date().toISOString()
+    };
+    
+    console.log('Creating fallback tea in localStorage:', fallbackTea);
+    
+    const teas = JSON.parse(localStorage.getItem('teaCollection') || '[]');
+    teas.push(fallbackTea);
     localStorage.setItem('teaCollection', JSON.stringify(teas));
     
-    return newTea;
+    return fallbackTea;
   }
 };
 
