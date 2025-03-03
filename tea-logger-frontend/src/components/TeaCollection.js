@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, X, Plus, Trash, Clock } from 'lucide-react';
-import { fetchSessions } from '../api';
+import { fetchSessions, fetchDashboardData } from '../api';
 import { fetchTeas, createTea, updateTea, deleteTea, fetchTeaById } from '../teaApi';
 import './TeaCollection.css';
 
@@ -29,66 +29,64 @@ const TeaCollection = () => {
   });
 
     // Load both teas and sessions
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      try {
-        // Load teas first - use one API call to get all teas
-        const teasData = await fetchTeas();
-        
-        // Load sessions
-        const sessionsData = await fetchSessions();
-        setSessions(sessionsData);
-        
-        // Calculate session stats for each tea
-        const teasWithStats = teasData.map(tea => {
-          // Find all sessions for this tea
-          const teaSessions = sessionsData.filter(session => 
-            (session.teaId && session.teaId === tea.id) || 
-            (!session.teaId && session.name === tea.name)
-          );
+    useEffect(() => {
+      const loadData = async () => {
+        setIsLoading(true);
+        try {
+          // Load data from consolidated endpoint
+          const dashboardData = await fetchDashboardData();
           
-          // Sort sessions by timestamp (newest first)
-          teaSessions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          // Set sessions
+          setSessions(dashboardData.sessions);
           
-          return {
-            ...tea,
-            sessionCount: teaSessions.length,
-            lastBrewed: teaSessions.length > 0 ? teaSessions[0].timestamp : null,
-            sessions: teaSessions
-          };
-        });
-        
-        setTeas(teasWithStats);
-        setFilteredTeas(teasWithStats);
-        
-        // Check if we need to focus on a specific tea
-        const focusTeaName = localStorage.getItem('focusTeaName');
-        if (focusTeaName) {
-          // Find the tea to expand
-          const focusTea = teasWithStats.find(t => t.name === focusTeaName);
-          if (focusTea) {
-            setExpandedTea(focusTea.id);
-            // Scroll to the tea
-            setTimeout(() => {
-              const element = document.getElementById(`tea-${focusTea.id}`);
-              if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            }, 100);
+          // Create teas with their stats
+          const teasWithStats = dashboardData.teas.map(tea => {
+            const teaId = tea.id.toString();
+            const stats = dashboardData.teaStats[teaId] || {
+              sessionCount: 0,
+              lastBrewed: null,
+              sessionIds: []
+            };
+            
+            // Find sessions for this tea
+            const teaSessions = stats.sessionIds
+              .map(sessionId => dashboardData.sessions.find(s => s.id.toString() === sessionId.toString()))
+              .filter(Boolean);
+            
+            return {
+              ...tea,
+              sessionCount: stats.sessionCount,
+              lastBrewed: stats.lastBrewed,
+              sessions: teaSessions
+            };
+          });
+          
+          setTeas(teasWithStats);
+          setFilteredTeas(teasWithStats);
+          
+          // Check if we need to focus on a specific tea
+          const focusTeaId = localStorage.getItem('focusTeaId');
+          const focusTeaName = localStorage.getItem('focusTeaName');
+          
+          if (focusTeaId) {
+            setExpandedTea(focusTeaId);
+            localStorage.removeItem('focusTeaId');
+          } else if (focusTeaName) {
+            const focusTea = teasWithStats.find(t => t.name === focusTeaName);
+            if (focusTea) {
+              setExpandedTea(focusTea.id);
+            }
+            localStorage.removeItem('focusTeaName');
           }
-          // Clear the focus
-          localStorage.removeItem('focusTeaName');
+        } catch (error) {
+          console.error('Error loading data:', error);
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error('Error loading data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    loadData();
-  }, []);
+      };
+      
+      loadData();
+    }, []);
 
   // Filter teas based on search and type
   useEffect(() => {

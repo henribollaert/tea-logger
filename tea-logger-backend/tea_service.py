@@ -150,3 +150,15 @@ def delete_tea(tea_id):
         return True
         
     return False
+
+def get_teas_by_ids(tea_ids):
+    """Get multiple teas by their IDs."""
+    tea_collection = get_tea_collection()
+    
+    # Convert all IDs to strings for comparison
+    tea_ids = [str(id) for id in tea_ids]
+    
+    # Filter the collection to just the requested teas
+    requested_teas = [tea for tea in tea_collection if str(tea.get('id')) in tea_ids]
+    
+    return requested_teas

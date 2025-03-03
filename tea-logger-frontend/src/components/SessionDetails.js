@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Save, Trash, ExternalLink } from 'lucide-react';
-import { fetchSessions, updateSession, deleteSession } from '../api';
+import { fetchSessionDetails, updateSession, deleteSession } from '../api';
 import { fetchTeaById } from '../teaApi';
 import './SessionDetails.css';
 
@@ -18,46 +18,24 @@ const SessionDetails = () => {
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    const loadSessionAndTea = async () => {
+    const loadSessionDetails = async () => {
       setIsLoading(true);
       try {
-        // First load the session
-        const sessions = await fetchSessions();
-        const foundSession = sessions.find(s => String(s.id) === String(id));
-                      
-        if (foundSession) {
-          setSession(foundSession);
-          
-          // Check if tea was passed in location state
-          if (location.state?.tea) {
-            setTea(location.state.tea);
-          } else if (foundSession.teaId) {
-            // Then load the associated tea if there's a teaId
-            const teaData = await fetchTeaById(foundSession.teaId);
-            setTea(teaData);
-          } else {
-            // For backward compatibility, use session data 
-            setTea({
-              id: null,
-              name: foundSession.name,
-              type: foundSession.type || '',
-              vendor: foundSession.vendor || '',
-              year: foundSession.age || ''
-            });
-          }
-        } else {
-          setMessage('Session not found');
-        }
+        // Use the consolidated endpoint
+        const data = await fetchSessionDetails(id);
+        
+        setSession(data.session);
+        setTea(data.tea);
       } catch (error) {
-        console.error('Error loading session:', error);
+        console.error('Error loading session details:', error);
         setMessage('Error loading session details');
       } finally {
         setIsLoading(false);
       }
     };
     
-    loadSessionAndTea();
-  }, [id, location.state]);
+    loadSessionDetails();
+  }, [id]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

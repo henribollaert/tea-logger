@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { PlusCircle, Clock, Menu, X, ChevronDown } from 'lucide-react';
 import './TeaLogger.css';
-import { fetchSessions, createSession, getSyncStatus, forceSync } from '../api';
+import { fetchDashboardData, fetchSessions, createSession, getSyncStatus, forceSync } from '../api';
 import { fetchTeas, fetchTeaByName, createTea, fetchTeaById } from '../teaApi';
+
 
 // Known vendors and their abbreviations
 const KNOWN_VENDORS = {
@@ -56,39 +57,36 @@ const TeaLogger = () => {
         setNotification('');
       }, 3000);
     }
-
-    // Load sessions and teas
+  
+    // Load data from dashboard endpoint
     const loadData = async () => {
       setIsLoading(true);
       try {
-        // Load sessions from API
-        const sessionsData = await fetchSessions();
+        // Load data from consolidated endpoint
+        const dashboardData = await fetchDashboardData();
         
-        // Sort sessions by timestamp, most recent first
-        const sortedSessions = [...sessionsData].sort((a, b) => 
+        // Set sessions from dashboard data
+        const sortedSessions = [...dashboardData.sessions].sort((a, b) => 
           new Date(b.timestamp) - new Date(a.timestamp)
         );
         
         setSessions(sortedSessions);
+        setTeas(dashboardData.teas);
         
-        // Get all teas in one request instead of multiple
-        const teasData = await fetchTeas();
-        
-        // Create lookup map for faster access
-        const teaMap = {};
-        teasData.forEach(tea => {
-          teaMap[tea.id] = tea;
-        });
-        
-        // Extract recent tea names
-        const recentTeaNames = sortedSessions
-          .slice(0, 5)
-          .map(session => session.name || (teaMap[session.teaId]?.name))
+        // Extract recent tea names (already sorted by timestamp)
+        const recentTeaNames = dashboardData.recentSessions
+          .map(session => {
+            if (session.teaId) {
+              const tea = dashboardData.teas.find(t => t.id.toString() === session.teaId.toString());
+              return tea ? tea.name : session.name;
+            }
+            return session.name;
+          })
           .filter(Boolean);
         
         setRecentTeas([...new Set(recentTeaNames)]); // Deduplicate
       } catch (error) {
-        console.error('Error loading data:', error);
+        console.error('Error loading dashboard data:', error);
       } finally {
         setIsLoading(false);
       }

@@ -451,3 +451,109 @@ export const setSyncInterval = async (intervalSeconds) => {
     return { success: false, message: error.message };
   }
 };
+
+// Cache for dashboard data
+let dashboardCache = null;
+let lastDashboardFetchTime = 0;
+
+// Fetch dashboard data (sessions, teas, and stats)
+export const fetchDashboardData = async (forceSync = false) => {
+  try {
+    // Check if we have a recent cache and no force sync requested
+    const now = Date.now();
+    if (dashboardCache && !forceSync && (now - lastDashboardFetchTime) < 5000) {
+      // Use cache if less than 5 seconds since last fetch
+      return dashboardCache;
+    }
+    
+    const url = addStorageParam(`${API_URL}/dashboard${forceSync ? '&force_sync=true' : ''}`);
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch dashboard data');
+    }
+    
+    const data = await response.json();
+    
+    // Update cache
+    dashboardCache = data;
+    lastDashboardFetchTime = now;
+    
+    // Update session cache as well for other components
+    sessionCache = data.sessions;
+    lastFetchTime = now;
+    
+    // Cache the latest data in localStorage as a fallback
+    localStorage.setItem('cachedDashboard', JSON.stringify(data));
+    localStorage.setItem('cachedSessions', JSON.stringify(data.sessions));
+    
+    return data;
+  } catch (error) {
+    console.error('Error fetching dashboard data:', error);
+    
+    // Try to use the cache first
+    if (dashboardCache) {
+      return dashboardCache;
+    }
+    
+    // Fall back to localStorage
+    const cachedDashboard = localStorage.getItem('cachedDashboard');
+    if (cachedDashboard) {
+      return JSON.parse(cachedDashboard);
+    }
+    
+    // Last resort: build a response from separate caches
+    const cachedSessions = JSON.parse(localStorage.getItem('cachedSessions') || '[]');
+    const cachedTeas = JSON.parse(localStorage.getItem('teaCollection') || '[]');
+    
+    return {
+      sessions: cachedSessions,
+      teas: cachedTeas,
+      teaStats: {},
+      recentSessions: cachedSessions.slice(0, 5)
+    };
+  }
+};
+
+// Fetch session details with associated tea
+export const fetchSessionDetails = async (sessionId) => {
+  try {
+    const url = addStorageParam(`${API_URL}/sessions/${sessionId}/details`);
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch session details');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching session details:', error);
+    
+    // Fall back to manual lookup
+    const sessions = await fetchSessions();
+    const session = sessions.find(s => s.id.toString() === sessionId.toString());
+    
+    if (!session) {
+      throw new Error('Session not found');
+    }
+    
+    let tea = null;
+    if (session.teaId) {
+      tea = await fetchTeaById(session.teaId);
+    } else if (session.name) {
+      tea = await fetchTeaByName(session.name);
+    }
+    
+    if (!tea && session.name) {
+      tea = {
+        id: null,
+        name: session.name,
+        type: session.type || '',
+        vendor: session.vendor || '',
+        year: session.age || ''
+      };
+    }
+    
+    return { session, tea };
+  }
+};

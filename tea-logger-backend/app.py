@@ -379,5 +379,87 @@ def delete_tea_route(tea_id):
     
     return jsonify({"error": TEA_NOT_FOUND}), 404
 
+@app.route('/api/dashboard', methods=['GET'])
+def get_dashboard_data():
+    """Get combined sessions and teas data for the dashboard view."""
+    try:
+        use_drive = request.args.get('use_drive', 'false').lower() == 'true'
+        force_sync = request.args.get('force_sync', 'false').lower() == 'true'
+        
+        # Get sessions and teas in a single operation
+        sessions = get_sessions_from_storage(use_drive, force_sync)
+        teas = get_tea_collection()
+        
+        # Calculate additional stats that are currently computed client-side
+        tea_stats = {}
+        for tea in teas:
+            tea_id = str(tea['id'])
+            tea_sessions = [s for s in sessions if str(s.get('teaId')) == tea_id or 
+                           (not s.get('teaId') and s.get('name') == tea.get('name'))]
+            
+            # Sort sessions by timestamp (newest first)
+            tea_sessions.sort(key=lambda s: s.get('timestamp', ''), reverse=True)
+            
+            tea_stats[tea_id] = {
+                'sessionCount': len(tea_sessions),
+                'lastBrewed': tea_sessions[0]['timestamp'] if tea_sessions else None,
+                'sessionIds': [s['id'] for s in tea_sessions]
+            }
+        
+        # For the main dashboard, get recent sessions
+        recent_sessions = sorted(sessions, 
+                               key=lambda s: s.get('timestamp', ''), 
+                               reverse=True)[:5]
+        
+        return jsonify({
+            'sessions': sessions,
+            'teas': teas,
+            'teaStats': tea_stats,
+            'recentSessions': recent_sessions
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/sessions/<session_id>/details', methods=['GET'])
+def get_session_details(session_id):
+    """Get a session and its associated tea in a single request."""
+    try:
+        use_drive = request.args.get('use_drive', 'false').lower() == 'true'
+        sessions = get_sessions_from_storage(use_drive)
+        
+        # Find the session
+        session = None
+        for s in sessions:
+            if str(s.get('id')) == str(session_id):
+                session = s
+                break
+                
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+            
+        # Get the associated tea
+        tea = None
+        if session.get('teaId'):
+            tea = get_tea_by_id(session.get('teaId'))
+        elif session.get('name'):
+            tea = get_tea_by_name(session.get('name'))
+            
+        if not tea and session.get('name'):
+            # Create a basic tea object from session data
+            tea = {
+                'id': None,
+                'name': session.get('name'),
+                'type': session.get('type', ''),
+                'vendor': session.get('vendor', ''),
+                'year': session.get('age', '')
+            }
+            
+        return jsonify({
+            'session': session,
+            'tea': tea
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
