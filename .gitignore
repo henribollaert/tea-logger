@@ -39,6 +39,7 @@ token.json
 
 # User data
 tea_sessions.json
+tea_collection.json
 
 # macOS
 .DS_Store
