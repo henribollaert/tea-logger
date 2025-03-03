@@ -1,4 +1,4 @@
-// src/components/TeaLogger.js
+// src/components/TeaLogger.js - Enhanced with Form Fields
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { PlusCircle, Clock, Menu, X, ChevronDown } from 'lucide-react';
@@ -8,6 +8,11 @@ import { fetchDashboardData, createSession, getSyncStatus, forceSync } from '../
 // Import custom hooks
 import { useNotification } from '../hooks/useNotification';
 import { useForm } from '../hooks/useForm';
+
+// Import common components
+import { TextField } from './common/FormFields';
+import { SkeletonSessionList } from './common/Skeleton';
+import ErrorDisplay from './common/ErrorDisplay';
 
 // Known vendors and their abbreviations
 const KNOWN_VENDORS = {
@@ -46,6 +51,7 @@ const TeaLogger = () => {
   const [recentTeas, setRecentTeas] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
   const [showAllSessions, setShowAllSessions] = useState(false);
   
@@ -66,6 +72,8 @@ const TeaLogger = () => {
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
+      setLoadError(null);
+      
       try {
         const dashboardData = await fetchDashboardData();
         
@@ -91,6 +99,7 @@ const TeaLogger = () => {
         setRecentTeas([...new Set(recentTeaNames)]); // Deduplicate
       } catch (error) {
         console.error('Error loading dashboard data:', error);
+        setLoadError(error);
         showNotification('Error loading tea data');
       } finally {
         setIsLoading(false);
@@ -178,6 +187,12 @@ const TeaLogger = () => {
     return result;
   }, []);
 
+  // Handle retry loading
+  const handleRetryLoading = () => {
+    setLoadError(null);
+    window.location.reload();
+  };
+
   // Start a new tea session
   const startNewSession = useCallback(async () => {
     if (!inputForm.teaInput?.trim()) return;
@@ -233,6 +248,73 @@ const TeaLogger = () => {
     navigate(`/session/${session.id}`);
   }, [navigate]);
 
+  // Render content based on state
+  const renderContent = () => {
+    if (isLoading) {
+      return <SkeletonSessionList count={2} />;
+    }
+    
+    if (loadError) {
+      return (
+        <ErrorDisplay 
+          error={loadError}
+          message="We couldn't load your recent sessions"
+          onRetry={handleRetryLoading}
+          showHome={false}
+        />
+      );
+    }
+    
+    if (sessions.length === 0) {
+      return (
+        <div className="empty-state">
+          No tea sessions recorded yet. Start by adding one above!
+        </div>
+      );
+    }
+    
+    return (
+      <div className="sessions-list">
+        {(showAllSessions ? sessions : sessions.slice(0, 2)).map(session => (
+          <div 
+            key={session.id} 
+            className="session-card"
+            onClick={() => handleSessionClick(session)}
+          >
+            <div className="session-header">
+              <div>
+                <h3 className="session-title">{session.name}</h3>
+                <div className="session-meta">
+                  {session.vendor && <span className="session-vendor">{session.vendor}</span>}
+                  {session.type && <span className="session-type">{session.type}</span>}
+                </div>
+              </div>
+              <div className="session-timestamp">
+                <Clock size={12} className="timestamp-icon" />
+                {new Date(session.timestamp).toLocaleDateString()}
+              </div>
+            </div>
+            {session.notes && (
+              <p className="session-notes">{session.notes}</p>
+            )}
+          </div>
+        ))}
+        
+        {/* Scroll indicator */}
+        {!showAllSessions && sessions.length > 2 && (
+          <button 
+            className="scroll-indicator"
+            onClick={() => setShowAllSessions(true)}
+            aria-label="Show more sessions"
+          >
+            <ChevronDown size={20} />
+            <span>Scroll for more</span>
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="app-container">
       {/* Header */}
@@ -258,26 +340,26 @@ const TeaLogger = () => {
         {/* Hero Section with Quick Add */}
         <div className="hero-section">
           <div className="input-container">
-            <input
-              ref={inputRef}
-              type="text"
+            {/* Updated to use the new TextField component */}
+            <TextField
               name="teaInput"
-              className="hero-input"
-              placeholder="What tea are you drinking now? (e.g. w2t Hot Brandy 2019)"
               value={inputForm.teaInput}
-              onChange={(e) => {
-                handleInputChange(e);
-                setShowSuggestions(e.target.value.length > 0);
-              }}
+              onChange={handleInputChange}
+              placeholder="What tea are you drinking now? (e.g. w2t Hot Brandy 2019)"
               onKeyDown={(e) => e.key === 'Enter' && startNewSession()}
+              className="hero-input"
+              ref={inputRef}
+              icon={
+                <button
+                  onClick={startNewSession}
+                  className="hero-button"
+                  aria-label="Add tea session"
+                  disabled={!inputForm.teaInput?.trim()}
+                >
+                  <PlusCircle size={20} />
+                </button>
+              }
             />
-            <button
-              onClick={startNewSession}
-              className="hero-button"
-              aria-label="Add tea session"
-            >
-              <PlusCircle size={20} />
-            </button>
           </div>
           
           {/* Suggestions */}
@@ -307,52 +389,7 @@ const TeaLogger = () => {
             </button>
           </div>
           
-          {isLoading ? (
-            <div className="loading-state">Loading sessions...</div>
-          ) : sessions.length === 0 ? (
-            <div className="empty-state">
-              No tea sessions recorded yet. Start by adding one above!
-            </div>
-          ) : (
-            <div className="sessions-list">
-              {(showAllSessions ? sessions : sessions.slice(0, 2)).map(session => (
-                <div 
-                  key={session.id} 
-                  className="session-card"
-                  onClick={() => handleSessionClick(session)}
-                >
-                  <div className="session-header">
-                    <div>
-                      <h3 className="session-title">{session.name}</h3>
-                      <div className="session-meta">
-                        {session.vendor && <span className="session-vendor">{session.vendor}</span>}
-                        {session.type && <span className="session-type">{session.type}</span>}
-                      </div>
-                    </div>
-                    <div className="session-timestamp">
-                      <Clock size={12} className="timestamp-icon" />
-                      {new Date(session.timestamp).toLocaleDateString()}
-                    </div>
-                  </div>
-                  {session.notes && (
-                    <p className="session-notes">{session.notes}</p>
-                  )}
-                </div>
-              ))}
-              
-              {/* Scroll indicator */}
-              {!showAllSessions && sessions.length > 2 && (
-                <button 
-                  className="scroll-indicator"
-                  onClick={() => setShowAllSessions(true)}
-                  aria-label="Show more sessions"
-                >
-                  <ChevronDown size={20} />
-                  <span>Scroll for more</span>
-                </button>
-              )}
-            </div>
-          )}
+          {renderContent()}
         </div>
       </main>
       

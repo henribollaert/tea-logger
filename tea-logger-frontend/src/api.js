@@ -1,9 +1,17 @@
-// src/api.js with tea references
-// This is a local API implementation that should be replaced with backend calls
-
+// src/api.js - Enhanced with error handling
+import { createApiClient } from './utils/apiErrorHandler';
 import { fetchTeaById, fetchTeaByName, createTea, migrateSessionsToTeaReferences } from './teaApi';
 
 const API_URL = 'http://127.0.0.1:5000/api';
+
+// Create an enhanced API client with automatic retries
+const apiClient = createApiClient({
+  maxRetries: 3,
+  retryDelay: 1000,
+  onError: (error, { attempt, maxRetries, willRetry }) => {
+    console.warn(`API error (attempt ${attempt}/${maxRetries}, ${willRetry ? 'will retry' : 'giving up'}):`, error);
+  }
+});
 
 // Default sync interval (10 minutes in milliseconds)
 const DEFAULT_SYNC_INTERVAL = 10 * 60 * 1000;
@@ -39,21 +47,15 @@ export const fetchSessions = async (forceSync = false) => {
       // Use cache if less than 5 seconds since last fetch
       return sessionCache;
     }
-    
+
+    // Try to fetch from server using enhanced client
+    const url = addStorageParam(`${API_URL}/sessions${forceSync ? '&force_sync=true' : ''}`);
     let sessions = [];
     
     try {
-      // Try to fetch from server
-      const url = addStorageParam(`${API_URL}/sessions${forceSync ? '&force_sync=true' : ''}`);
-      const response = await fetch(url);
-      
-      if (response.ok) {
-        sessions = await response.json();
-      } else {
-        throw new Error('Failed to fetch sessions');
-      }
-    } catch (serverError) {
-      console.error('Error fetching from server, falling back to local data:', serverError);
+      sessions = await apiClient(url);
+    } catch (error) {
+      console.error('Error fetching from server, falling back to local data:', error);
       // Fallback to local storage
       const cachedSessions = localStorage.getItem('cachedSessions');
       if (cachedSessions) {
@@ -101,7 +103,6 @@ const ensureTeaReferences = async (sessions) => {
   if (needsMigration) {
     try {
       // Create tea references for existing sessions
-      // This function should return a Map
       const teaMap = await migrateSessionsToTeaReferences(sessions);
       
       // Ensure teaMap is actually a Map object
@@ -129,7 +130,6 @@ const ensureTeaReferences = async (sessions) => {
   return sessions;
 };
 
-// Create a new session with tea reference
 // Create a new session with tea reference
 export const createSession = async (sessionData) => {
   try {
@@ -178,9 +178,10 @@ export const createSession = async (sessionData) => {
     
     console.log('Prepared session for API:', session);
 
+    // Try server request with enhanced error handling
     try {
-      // Try server request
-      const response = await fetch(addStorageParam(`${API_URL}/sessions`), {
+      const url = addStorageParam(`${API_URL}/sessions`);
+      const response = await apiClient(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -188,21 +189,16 @@ export const createSession = async (sessionData) => {
         body: JSON.stringify(session),
       });
       
-      if (!response.ok) {
-        throw new Error(`Failed to create session on server: ${response.status}`);
-      }
-      
-      const responseData = await response.json();
-      console.log('Server response:', responseData);
+      console.log('Server response:', response);
       
       // Update our cache with the new session
       if (sessionCache) {
-        sessionCache = [responseData, ...sessionCache];
+        sessionCache = [response, ...sessionCache];
       }
       
-      return responseData;
-    } catch (serverError) {
-      console.error('Error creating session on server, storing locally:', serverError);
+      return response;
+    } catch (error) {
+      console.error('Error creating session on server, storing locally:', error);
       
       // Store in local cache
       if (sessionCache) {
@@ -226,12 +222,10 @@ export const createSession = async (sessionData) => {
 // Update an existing session
 export const updateSession = async (id, sessionData) => {
   try {
-    // Don't need to update the tea reference on session update
-    // Session updates should only affect session-specific data
-    
+    // Try server request with enhanced error handling
     try {
-      // Try server request
-      const response = await fetch(addStorageParam(`${API_URL}/sessions/${id}`), {
+      const url = addStorageParam(`${API_URL}/sessions/${id}`);
+      const response = await apiClient(url, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -239,22 +233,16 @@ export const updateSession = async (id, sessionData) => {
         body: JSON.stringify(sessionData),
       });
       
-      if (!response.ok) {
-        throw new Error('Failed to update session on server');
-      }
-      
-      const responseData = await response.json();
-      
       // Update cache
       if (sessionCache) {
         sessionCache = sessionCache.map(session => 
-          session.id.toString() === id.toString() ? responseData : session
+          session.id.toString() === id.toString() ? response : session
         );
       }
       
-      return responseData;
-    } catch (serverError) {
-      console.error('Error updating session on server, updating locally:', serverError);
+      return response;
+    } catch (error) {
+      console.error('Error updating session on server, updating locally:', error);
       
       // Update local cache
       if (sessionCache) {
@@ -284,17 +272,12 @@ export const updateSession = async (id, sessionData) => {
 // Delete a session
 export const deleteSession = async (id) => {
   try {
+    // Try server request with enhanced error handling
     try {
-      // Try server request
-      const response = await fetch(addStorageParam(`${API_URL}/sessions/${id}`), {
+      const url = addStorageParam(`${API_URL}/sessions/${id}`);
+      const response = await apiClient(url, {
         method: 'DELETE',
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete session on server');
-      }
-      
-      const responseData = await response.json();
       
       // Update cache
       if (sessionCache) {
@@ -303,9 +286,9 @@ export const deleteSession = async (id) => {
         );
       }
       
-      return responseData;
-    } catch (serverError) {
-      console.error('Error deleting session on server, deleting locally:', serverError);
+      return response;
+    } catch (error) {
+      console.error('Error deleting session on server, deleting locally:', error);
       
       // Update local cache
       if (sessionCache) {
@@ -362,16 +345,11 @@ export const forceSync = async () => {
     }
     
     try {
-      // Send force sync request to server
-      const response = await fetch(addStorageParam(`${API_URL}/sync`), {
+      // Send force sync request to server with enhanced error handling
+      const url = addStorageParam(`${API_URL}/sync`);
+      const result = await apiClient(url, {
         method: 'POST',
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to sync with server');
-      }
-      
-      const result = await response.json();
       
       // Refresh sessions after sync
       await fetchSessions(true);
@@ -391,14 +369,9 @@ export const forceSync = async () => {
 export const getSyncStatus = async () => {
   try {
     try {
-      // Get sync status from server
-      const response = await fetch(addStorageParam(`${API_URL}/sync/status`));
-      
-      if (!response.ok) {
-        throw new Error('Failed to get sync status from server');
-      }
-      
-      return await response.json();
+      // Get sync status from server with enhanced error handling
+      const url = addStorageParam(`${API_URL}/sync/status`);
+      return await apiClient(url);
     } catch (error) {
       console.error('Error getting sync status from server:', error);
       
@@ -428,20 +401,15 @@ export const setSyncInterval = async (intervalSeconds) => {
     localStorage.setItem('syncInterval', intervalSeconds.toString());
     
     try {
-      // Update on server
-      const response = await fetch(addStorageParam(`${API_URL}/sync/interval`), {
+      // Update on server with enhanced error handling
+      const url = addStorageParam(`${API_URL}/sync/interval`);
+      return await apiClient(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ interval: intervalSeconds }),
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to set sync interval on server');
-      }
-      
-      return await response.json();
     } catch (error) {
       console.error('Error setting sync interval on server:', error);
       return { success: true, interval: intervalSeconds };
@@ -466,14 +434,9 @@ export const fetchDashboardData = async (forceSync = false) => {
       return dashboardCache;
     }
     
+    // Get data with enhanced error handling
     const url = addStorageParam(`${API_URL}/dashboard${forceSync ? '&force_sync=true' : ''}`);
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch dashboard data');
-    }
-    
-    const data = await response.json();
+    const data = await apiClient(url);
     
     // Update cache
     dashboardCache = data;
@@ -518,14 +481,9 @@ export const fetchDashboardData = async (forceSync = false) => {
 // Fetch session details with associated tea
 export const fetchSessionDetails = async (sessionId) => {
   try {
+    // Get details with enhanced error handling
     const url = addStorageParam(`${API_URL}/sessions/${sessionId}/details`);
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch session details');
-    }
-    
-    return await response.json();
+    return await apiClient(url);
   } catch (error) {
     console.error('Error fetching session details:', error);
     

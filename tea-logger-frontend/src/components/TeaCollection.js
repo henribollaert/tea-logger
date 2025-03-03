@@ -1,4 +1,4 @@
-// src/components/TeaCollection.js (with skeleton loading states)
+// src/components/TeaCollection.js - Linting fixed
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, X, Plus } from 'lucide-react';
@@ -16,7 +16,6 @@ import { SkeletonTeaList } from './common/Skeleton';
 // Import custom hooks
 import { useNotification } from '../hooks/useNotification';
 import { useModal } from '../hooks/useModal';
-import { useForm } from '../hooks/useForm';
 
 const TeaCollection = () => {
   const navigate = useNavigate();
@@ -35,23 +34,14 @@ const TeaCollection = () => {
     notes: ''
   };
   
-  // Form hook for tea form
-  const { 
-    values: newTea, 
-    handleChange: handleTeaChange, 
-    reset: resetTeaForm,
-    setValues: setNewTea 
-  } = useForm(initialTea);
-  
   // Component state
-  const [sessions, setSessions] = useState([]);
   const [teas, setTeas] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('');
   const [isAddingTea, setIsAddingTea] = useState(false);
-  const [editingTeaId, setEditingTeaId] = useState(null);
+  const [editingTea, setEditingTea] = useState(null);
   const [expandedTea, setExpandedTea] = useState(null);
 
   // Load data on component mount
@@ -62,8 +52,6 @@ const TeaCollection = () => {
       
       try {
         const dashboardData = await fetchDashboardData();
-        
-        setSessions(dashboardData.sessions);
         
         const teasWithStats = dashboardData.teas.map(tea => {
           const teaId = tea.id.toString();
@@ -116,7 +104,7 @@ const TeaCollection = () => {
   // Handle retry loading
   const handleRetryLoading = useCallback(() => {
     setLoadError(null);
-    fetchDashboardData();
+    window.location.reload();
   }, []);
 
   // Memoize filtered teas
@@ -152,16 +140,18 @@ const TeaCollection = () => {
     setSearchTerm('');
   }, []);
 
-  const handleAddTea = useCallback(async () => {
-    if (!newTea.name.trim()) return;
+  const handleAddTea = useCallback(async (teaData) => {
+    if (!teaData.name.trim()) return;
     
     try {
+      console.log('Creating new tea:', teaData);
+      
       const createdTea = await createTea({
-        name: newTea.name.trim(),
-        type: newTea.type,
-        vendor: newTea.vendor,
-        year: newTea.year,
-        notes: newTea.notes
+        name: teaData.name.trim(),
+        type: teaData.type || '',
+        vendor: teaData.vendor || '',
+        year: teaData.year || '',
+        notes: teaData.notes || ''
       });
       
       const teaWithStats = {
@@ -174,40 +164,37 @@ const TeaCollection = () => {
       setTeas(prev => [...prev, teaWithStats]);
       setIsAddingTea(false);
       showNotification('Tea added to collection');
-      resetTeaForm();
     } catch (error) {
       console.error('Error adding tea:', error);
       showNotification('Error adding tea to collection');
     }
-  }, [newTea, showNotification, resetTeaForm]);
+  }, [showNotification]);
 
   const handleEditTea = useCallback((tea) => {
-    setEditingTeaId(tea.id);
-    setNewTea({
-      id: tea.id,
-      name: tea.name,
-      type: tea.type || '',
-      vendor: tea.vendor || '',
-      year: tea.year || '',
-      notes: tea.notes || ''
-    });
-  }, [setNewTea]);
+    console.log('Setting up tea editing for:', tea);
+    setEditingTea(tea);
+  }, []);
 
-  const handleUpdateTea = useCallback(async () => {
-    if (!newTea.name.trim() || !editingTeaId) return;
+  const handleUpdateTea = useCallback(async (teaData) => {
+    if (!teaData.name.trim() || !teaData.id) {
+      console.error('Invalid tea data for update:', teaData);
+      return;
+    }
     
     try {
-      const updatedTea = await updateTea(editingTeaId, {
-        name: newTea.name.trim(),
-        type: newTea.type,
-        vendor: newTea.vendor,
-        year: newTea.year,
-        notes: newTea.notes
+      console.log('Updating tea with data:', teaData);
+      
+      const updatedTea = await updateTea(teaData.id, {
+        name: teaData.name.trim(),
+        type: teaData.type || '',
+        vendor: teaData.vendor || '',
+        year: teaData.year || '',
+        notes: teaData.notes || ''
       });
       
       if (updatedTea) {
         setTeas(prev => prev.map(tea => {
-          if (tea.id === editingTeaId) {
+          if (tea.id === teaData.id) {
             return {
               ...updatedTea,
               sessionCount: tea.sessionCount || 0,
@@ -218,9 +205,8 @@ const TeaCollection = () => {
           return tea;
         }));
         
-        setEditingTeaId(null);
+        setEditingTea(null);
         showNotification('Tea updated successfully');
-        resetTeaForm();
       } else {
         showNotification('Error updating tea');
       }
@@ -228,12 +214,11 @@ const TeaCollection = () => {
       console.error('Error updating tea:', error);
       showNotification('Error updating tea');
     }
-  }, [newTea, editingTeaId, showNotification, resetTeaForm]);
+  }, [showNotification]);
 
   const handleCancelEdit = useCallback(() => {
-    setEditingTeaId(null);
-    resetTeaForm();
-  }, [resetTeaForm]);
+    setEditingTea(null);
+  }, []);
 
   const handleDeleteClick = useCallback((e, tea) => {
     e.stopPropagation();
@@ -244,6 +229,8 @@ const TeaCollection = () => {
     if (!teaToDelete) return;
     
     try {
+      console.log('Deleting tea:', teaToDelete);
+      
       const success = await deleteTea(teaToDelete.id);
       
       if (success) {
@@ -275,15 +262,13 @@ const TeaCollection = () => {
     }
   }, [expandedTea, handleEditTea, toggleSessionHistory]);
 
-  // Render content based on loading/error state
+  // Render content based on state
   const renderContent = () => {
     if (isLoading) {
-      // Show skeleton loading state
       return <SkeletonTeaList count={5} />;
     }
     
     if (loadError) {
-      // Show error state with retry option
       return (
         <ErrorDisplay 
           error={loadError}
@@ -295,7 +280,6 @@ const TeaCollection = () => {
     }
     
     if (filteredTeas.length === 0) {
-      // Show empty state
       return (
         <div className="empty-state">
           {searchTerm || filterType 
@@ -305,7 +289,6 @@ const TeaCollection = () => {
       );
     }
     
-    // Show tea list
     return (
       <div className="tea-collection-list">
         {filteredTeas.map(tea => (
@@ -337,10 +320,7 @@ const TeaCollection = () => {
           <button 
             onClick={() => {
               setIsAddingTea(!isAddingTea);
-              setEditingTeaId(null);
-              if (!isAddingTea) {
-                resetTeaForm();
-              }
+              setEditingTea(null);
             }} 
             className="icon-button"
           >
@@ -358,13 +338,22 @@ const TeaCollection = () => {
         )}
       
         {/* Add/Edit Tea Form */}
-        {(isAddingTea || editingTeaId) && (
+        {isAddingTea && (
           <TeaForm
-            tea={newTea}
-            onChange={handleTeaChange}
-            onSave={editingTeaId ? handleUpdateTea : handleAddTea}
-            onCancel={editingTeaId ? handleCancelEdit : () => setIsAddingTea(false)}
-            isEditing={!!editingTeaId}
+            tea={initialTea}
+            onSave={handleAddTea}
+            onCancel={() => setIsAddingTea(false)}
+            isEditing={false}
+          />
+        )}
+        
+        {/* Edit Tea Form */}
+        {editingTea && (
+          <TeaForm
+            tea={editingTea}
+            onSave={handleUpdateTea}
+            onCancel={handleCancelEdit}
+            isEditing={true}
           />
         )}
         

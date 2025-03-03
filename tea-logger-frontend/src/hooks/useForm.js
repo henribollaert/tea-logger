@@ -1,5 +1,5 @@
-// src/hooks/useForm.js
-import { useState, useCallback, useEffect } from 'react';
+// src/hooks/useForm.js - Complete rewrite with stable update pattern
+import { useState, useCallback, useRef } from 'react';
 
 export function useForm(initialValues, validationSchema = {}) {
   const [values, setValues] = useState(initialValues);
@@ -8,72 +8,26 @@ export function useForm(initialValues, validationSchema = {}) {
   const [isDirty, setIsDirty] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isValid, setIsValid] = useState(Object.keys(validationSchema).length === 0);
-
-  // Reset form to initial values
-  const reset = useCallback((newValues = initialValues) => {
-    setValues(newValues);
-    setErrors({});
-    setTouched({});
-    setIsDirty(false);
-    setIsSubmitting(false);
-  }, [initialValues]);
-
-  // Set values programmatically
-  const setValue = useCallback((name, value) => {
-    setValues(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    setIsDirty(true);
-  }, []);
-
-  // Handle change for any input
-  const handleChange = useCallback((e) => {
-    const { name, value, type, checked } = e.target;
-    
-    // Handle different input types
-    const newValue = type === 'checkbox' ? checked : value;
-    
-    setValues(prev => ({
-      ...prev,
-      [name]: newValue
-    }));
-    
-    setTouched(prev => ({
-      ...prev,
-      [name]: true
-    }));
-    
-    setIsDirty(true);
-  }, []);
-
-  // Handle blur event for any input
-  const handleBlur = useCallback((e) => {
-    const { name } = e.target;
-    
-    setTouched(prev => ({
-      ...prev,
-      [name]: true
-    }));
-    
-    // Validate field on blur
-    if (validationSchema[name]) {
-      validateField(name, values[name]);
+  
+  // Use refs to track previous values and validation state
+  const isValidatingRef = useRef(false);
+  const lastValuesRef = useRef(values);
+  
+  // Helper function to validate a single field - not a hook dependency
+  const validateField = (name, value) => {
+    // No validation schema means field is valid
+    if (!validationSchema[name]) {
+      return { isValid: true };
     }
-  }, [values, validationSchema]);
-
-  // Validate a single field
-  const validateField = useCallback((name, value) => {
-    if (!validationSchema[name]) return true;
     
     const fieldSchema = validationSchema[name];
-    let isValid = true;
+    let fieldIsValid = true;
     let errorMessage = '';
     
     // Required validation
     if (fieldSchema.required && 
         (value === undefined || value === null || value === '')) {
-      isValid = false;
+      fieldIsValid = false;
       errorMessage = fieldSchema.required.message || 'This field is required';
     }
     
@@ -81,7 +35,7 @@ export function useForm(initialValues, validationSchema = {}) {
     else if (fieldSchema.minLength && 
              value && 
              value.length < fieldSchema.minLength.value) {
-      isValid = false;
+      fieldIsValid = false;
       errorMessage = fieldSchema.minLength.message || 
                     `Must be at least ${fieldSchema.minLength.value} characters`;
     }
@@ -90,7 +44,7 @@ export function useForm(initialValues, validationSchema = {}) {
     else if (fieldSchema.maxLength && 
              value && 
              value.length > fieldSchema.maxLength.value) {
-      isValid = false;
+      fieldIsValid = false;
       errorMessage = fieldSchema.maxLength.message || 
                     `Must be at most ${fieldSchema.maxLength.value} characters`;
     }
@@ -99,7 +53,7 @@ export function useForm(initialValues, validationSchema = {}) {
     else if (fieldSchema.pattern && 
              value && 
              !fieldSchema.pattern.regex.test(value)) {
-      isValid = false;
+      fieldIsValid = false;
       errorMessage = fieldSchema.pattern.message || 'Invalid format';
     }
     
@@ -107,47 +61,130 @@ export function useForm(initialValues, validationSchema = {}) {
     else if (fieldSchema.validate) {
       const customValid = fieldSchema.validate.validator(value, values);
       if (!customValid) {
-        isValid = false;
+        fieldIsValid = false;
         errorMessage = fieldSchema.validate.message || 'Invalid value';
       }
     }
     
-    // Update errors
-    setErrors(prev => ({
-      ...prev,
-      [name]: isValid ? undefined : errorMessage
-    }));
-    
-    return isValid;
-  }, [values, validationSchema]);
+    return {
+      isValid: fieldIsValid,
+      errorMessage: fieldIsValid ? undefined : errorMessage
+    };
+  };
 
-  // Validate all fields
+  // Update form values
+  const setFormValues = useCallback((newValues) => {
+    // Update values
+    setValues(newValues);
+    // Set last values ref
+    lastValuesRef.current = newValues;
+  }, []);
+
+  // Reset form to initial values
+  const reset = useCallback((newValues = initialValues) => {
+    setFormValues(newValues);
+    setErrors({});
+    setTouched({});
+    setIsDirty(false);
+    setIsSubmitting(false);
+    lastValuesRef.current = newValues;
+  }, [initialValues, setFormValues]);
+
+  // Set a single value
+  const setValue = useCallback((name, value) => {
+    // Update only this field
+    setValues(prev => {
+      const updated = { ...prev, [name]: value };
+      lastValuesRef.current = updated;
+      return updated;
+    });
+    
+    setIsDirty(true);
+    
+    // Validate the field if it was touched
+    if (touched[name]) {
+      const result = validateField(name, value);
+      if (!result.isValid) {
+        setErrors(prev => ({ ...prev, [name]: result.errorMessage }));
+      } else {
+        setErrors(prev => {
+          const updated = { ...prev };
+          delete updated[name];
+          return updated;
+        });
+      }
+    }
+  }, [touched]);
+
+  // Handle form input changes
+  const handleChange = useCallback((e) => {
+    const { name, value, type, checked } = e.target;
+    const inputValue = type === 'checkbox' ? checked : value;
+    
+    // Update the value
+    setValue(name, inputValue);
+    
+    // Mark as touched
+    if (!touched[name]) {
+      setTouched(prev => ({ ...prev, [name]: true }));
+    }
+  }, [setValue, touched]);
+
+  // Handle field blur event
+  const handleBlur = useCallback((e) => {
+    const { name } = e.target;
+    
+    // Mark as touched
+    if (!touched[name]) {
+      setTouched(prev => ({ ...prev, [name]: true }));
+    }
+    
+    // Validate on blur
+    if (validationSchema[name]) {
+      const result = validateField(name, values[name]);
+      if (!result.isValid) {
+        setErrors(prev => ({ ...prev, [name]: result.errorMessage }));
+      } else {
+        setErrors(prev => {
+          const updated = { ...prev };
+          delete updated[name];
+          return updated;
+        });
+      }
+    }
+  }, [values, validationSchema, touched]);
+
+  // Validate all form fields
   const validateForm = useCallback(() => {
-    const newErrors = {};
+    if (isValidatingRef.current) return true;
+    
+    isValidatingRef.current = true;
+    
     let formIsValid = true;
+    const newErrors = {};
     
     // Mark all fields as touched
     const allTouched = Object.keys(validationSchema).reduce((acc, field) => {
       acc[field] = true;
       return acc;
     }, {});
-    
     setTouched(allTouched);
     
-    // Validate each field
-    Object.keys(validationSchema).forEach(fieldName => {
-      const isFieldValid = validateField(fieldName, values[fieldName]);
-      if (!isFieldValid) {
+    // Validate all fields
+    Object.keys(validationSchema).forEach(name => {
+      const result = validateField(name, values[name]);
+      if (!result.isValid) {
         formIsValid = false;
-        newErrors[fieldName] = errors[fieldName]; // Preserve existing error message
+        newErrors[name] = result.errorMessage;
       }
     });
     
     setErrors(newErrors);
     setIsValid(formIsValid);
     
+    isValidatingRef.current = false;
     return formIsValid;
-  }, [values, errors, validationSchema, validateField]);
+  }, [values, validationSchema]);
 
   // Handle form submission
   const handleSubmit = useCallback((submitFn) => {
@@ -156,20 +193,18 @@ export function useForm(initialValues, validationSchema = {}) {
       
       setIsSubmitting(true);
       
-      const isValid = validateForm();
+      // Validate all fields
+      const isFormValid = validateForm();
       
-      if (isValid) {
+      if (isFormValid) {
         try {
           await submitFn(values);
         } catch (error) {
           console.error('Form submission error:', error);
           
-          // If the error has field-specific errors, set them
+          // Handle field errors
           if (error.fieldErrors) {
-            setErrors(prev => ({
-              ...prev,
-              ...error.fieldErrors
-            }));
+            setErrors(prev => ({ ...prev, ...error.fieldErrors }));
           }
         }
       }
@@ -177,28 +212,6 @@ export function useForm(initialValues, validationSchema = {}) {
       setIsSubmitting(false);
     };
   }, [values, validateForm]);
-
-  // Re-validate form when values change and we have validation rules
-  useEffect(() => {
-    if (Object.keys(validationSchema).length > 0 && isDirty) {
-      // Only validate touched fields
-      const touchedFields = Object.keys(touched).filter(key => touched[key]);
-      
-      let formIsValid = true;
-      const newErrors = { ...errors };
-      
-      touchedFields.forEach(fieldName => {
-        if (validationSchema[fieldName]) {
-          const isFieldValid = validateField(fieldName, values[fieldName]);
-          if (!isFieldValid) {
-            formIsValid = false;
-          }
-        }
-      });
-      
-      setIsValid(formIsValid);
-    }
-  }, [values, touched, isDirty, errors, validationSchema, validateField]);
 
   return {
     values,
@@ -209,26 +222,10 @@ export function useForm(initialValues, validationSchema = {}) {
     handleSubmit,
     reset,
     setValue,
-    setValues,
+    setValues: setFormValues,
     validateForm,
-    validateField,
     isSubmitting,
     isDirty,
     isValid
   };
 }
-
-// Example validation schema:
-// const validationSchema = {
-//   name: {
-//     required: { message: 'Name is required' },
-//     minLength: { value: 3, message: 'Name must be at least 3 characters' }
-//   },
-//   email: {
-//     required: { message: 'Email is required' },
-//     pattern: { 
-//       regex: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-//       message: 'Invalid email address'
-//     }
-//   }
-// };

@@ -1,7 +1,13 @@
-// src/teaApi.js
-// Optimized version with caching and reduced API calls
+// src/teaApi.js - Enhanced with error handling and fixed update handling
+import { createApiClient } from './utils/apiErrorHandler';
 
 const API_URL = 'http://127.0.0.1:5000/api';
+
+// Create an enhanced API client with automatic retries
+const apiClient = createApiClient({
+  maxRetries: 3,
+  retryDelay: 1000
+});
 
 // Cache for tea data
 let teaCache = null;
@@ -14,6 +20,16 @@ const addStorageParam = (url) => {
   const useGoogleDrive = localStorage.getItem('useGoogleDrive') === 'true';
   const syncInterval = localStorage.getItem('syncInterval') || '600';
   return `${url}${url.includes('?') ? '&' : '?'}use_drive=${useGoogleDrive}&sync_interval=${syncInterval}`;
+};
+
+// Log detailed information about tea updates for debugging
+const logTeaOperation = (operation, tea, result) => {
+  console.log(`Tea ${operation} operation:`, {
+    tea,
+    result,
+    success: !!result,
+    timestamp: new Date().toISOString()
+  });
 };
 
 // Fallback to localStorage if the server is unreachable
@@ -38,13 +54,7 @@ export const fetchTeas = async (forceRefresh = false) => {
   }
   
   try {
-    const response = await fetch(addStorageParam(`${API_URL}/teas`));
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch teas');
-    }
-    
-    const teas = await response.json();
+    const teas = await apiClient(addStorageParam(`${API_URL}/teas`));
     
     // Update cache
     teaCache = teas;
@@ -79,17 +89,7 @@ export const fetchTeaById = async (id) => {
   }
   
   try {
-    const response = await fetch(addStorageParam(`${API_URL}/teas/${id}`));
-    
-    if (response.status === 404) {
-      return null; // Tea not found
-    }
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch tea');
-    }
-    
-    const tea = await response.json();
+    const tea = await apiClient(addStorageParam(`${API_URL}/teas/${id}`));
     
     // Update the cache if it exists
     if (teaCache) {
@@ -112,43 +112,43 @@ export const fetchTeaById = async (id) => {
 };
 
 // Get a tea by name (for backwards compatibility)
-// Get a tea by name (for backwards compatibility)
 export const fetchTeaByName = async (name) => {
   if (!name) return null;
   
   try {
     // URL encode the name to handle special characters
     const encodedName = encodeURIComponent(name);
-    const response = await fetch(addStorageParam(`${API_URL}/teas/by-name/${encodedName}`));
     
-    if (response.status === 404) {
-      console.log(`Tea not found by name: ${name}`);
-      // If not found by the exact name, try to create a basic tea object
-      // This helps with transitioning to the new system
-      const basicTea = {
-        name: name,
-        type: '',
-        vendor: '',
-        year: '',
-        notes: ''
-      };
-      
-      try {
-        // Create the tea in the collection
-        console.log(`Creating new tea for: ${name}`);
-        const newTea = await createTea(basicTea);
-        return newTea;
-      } catch (createError) {
-        console.error(`Error creating tea for ${name}:`, createError);
-        return null;
+    try {
+      const tea = await apiClient(addStorageParam(`${API_URL}/teas/by-name/${encodedName}`));
+      return tea;
+    } catch (error) {
+      // If 404, try to create a basic tea object
+      if (error.status === 404) {
+        console.log(`Tea not found by name: ${name}`);
+        
+        // Create a basic tea object
+        const basicTea = {
+          name: name,
+          type: '',
+          vendor: '',
+          year: '',
+          notes: ''
+        };
+        
+        try {
+          // Create the tea in the collection
+          console.log(`Creating new tea for: ${name}`);
+          const newTea = await createTea(basicTea);
+          return newTea;
+        } catch (createError) {
+          console.error(`Error creating tea for ${name}:`, createError);
+          return null;
+        }
+      } else {
+        throw error; // Re-throw other errors
       }
     }
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch tea by name');
-    }
-    
-    return await response.json();
   } catch (error) {
     console.error('Error fetching tea by name:', error);
     
@@ -183,7 +183,13 @@ export const createTea = async (teaData) => {
       }
     }
     
-    const response = await fetch(addStorageParam(`${API_URL}/teas`), {
+    // Ensure a vendor is properly normalized and set (convert aliases to full name)
+    if (teaData.vendor) {
+      teaData.vendor = normalizeVendorName(teaData.vendor);
+    }
+    
+    // Create tea using the API
+    const newTea = await apiClient(addStorageParam(`${API_URL}/teas`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -191,11 +197,8 @@ export const createTea = async (teaData) => {
       body: JSON.stringify(teaData),
     });
     
-    if (!response.ok) {
-      throw new Error('Failed to create tea');
-    }
-    
-    const newTea = await response.json();
+    // Log the operation
+    logTeaOperation('create', teaData, newTea);
     
     // Update the cache
     if (teaCache) {
@@ -241,19 +244,31 @@ export const createTea = async (teaData) => {
 // Update a tea
 export const updateTea = async (id, teaData) => {
   try {
-    const response = await fetch(addStorageParam(`${API_URL}/teas/${id}`), {
+    // Ensure vendor is properly normalized
+    if (teaData.vendor) {
+      teaData.vendor = normalizeVendorName(teaData.vendor);
+    }
+    
+    // Make sure the ID is preserved
+    const dataToUpdate = {
+      ...teaData,
+      id: id.toString()
+    };
+    
+    // Log pre-update information
+    console.log(`Updating tea ${id} with data:`, dataToUpdate);
+    
+    // Update tea using the API
+    const updatedTea = await apiClient(addStorageParam(`${API_URL}/teas/${id}`), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(teaData),
+      body: JSON.stringify(dataToUpdate),
     });
     
-    if (!response.ok) {
-      throw new Error('Failed to update tea');
-    }
-    
-    const updatedTea = await response.json();
+    // Log the operation
+    logTeaOperation('update', dataToUpdate, updatedTea);
     
     // Update the cache
     if (teaCache) {
@@ -287,7 +302,7 @@ export const updateTea = async (id, teaData) => {
     const updatedTea = {
       ...teas[index],
       ...teaData,
-      id: teas[index].id,
+      id: teas[index].id, // Ensure ID doesn't change
       updated: new Date().toISOString()
     };
     
@@ -301,13 +316,10 @@ export const updateTea = async (id, teaData) => {
 // Delete a tea
 export const deleteTea = async (id) => {
   try {
-    const response = await fetch(addStorageParam(`${API_URL}/teas/${id}`), {
+    // Delete tea using the API
+    await apiClient(addStorageParam(`${API_URL}/teas/${id}`), {
       method: 'DELETE',
     });
-    
-    if (!response.ok) {
-      throw new Error('Failed to delete tea');
-    }
     
     // Update the cache
     if (teaCache) {
@@ -336,7 +348,49 @@ export const deleteTea = async (id) => {
   }
 };
 
-// Migrate existing sessions to use the tea collection
+// Normalize vendor names (convert aliases to full name, handle case sensitivity)
+export const normalizeVendorName = (vendorName) => {
+  if (!vendorName) return '';
+  
+  // Trim whitespace and normalize case (first letter of each word capitalized)
+  const normalizedName = vendorName.trim();
+  
+  // Check if this is an alias
+  const lowercaseName = normalizedName.toLowerCase();
+  
+  // First check user-defined vendors
+  const storedVendors = localStorage.getItem('teaVendors');
+  if (storedVendors) {
+    try {
+      const vendors = JSON.parse(storedVendors);
+      
+      // Check if this is an exact match for a vendor name
+      const exactMatch = vendors.find(v => 
+        v.name.toLowerCase() === lowercaseName
+      );
+      if (exactMatch) return exactMatch.name; // Use the properly cased name
+      
+      // Check if this is a vendor alias
+      for (const vendor of vendors) {
+        const isAlias = vendor.aliases.some(alias => 
+          alias.toLowerCase() === lowercaseName
+        );
+        if (isAlias) return vendor.name;
+      }
+    } catch (error) {
+      console.error('Error parsing stored vendors:', error);
+    }
+  }
+  
+  // Check against hardcoded known vendors/aliases
+  if (KNOWN_VENDORS[lowercaseName]) {
+    return KNOWN_VENDORS[lowercaseName];
+  }
+  
+  // If no match found, return the original vendor name (properly cased)
+  return normalizedName;
+};
+
 // Migrate existing sessions to use the tea collection
 export const migrateSessionsToTeaReferences = async (sessions) => {
   // Extract unique teas from sessions
@@ -347,7 +401,7 @@ export const migrateSessionsToTeaReferences = async (sessions) => {
       uniqueTeas.set(session.name, {
         name: session.name,
         type: session.type || '',
-        vendor: session.vendor || '',
+        vendor: session.vendor ? normalizeVendorName(session.vendor) : '',
         year: session.age || '',
         notes: ''
       });
@@ -391,4 +445,20 @@ export const migrateSessionsToTeaReferences = async (sessions) => {
   
   // Return the tea map for session updating
   return teaMap;
+};
+
+// Helper function for constant KNOWN_VENDORS
+const KNOWN_VENDORS = {
+  'w2t': 'White2Tea',
+  'white2tea': 'White2Tea',
+  'crimson': 'Crimson Lotus Tea',
+  'clt': 'Crimson Lotus Tea',
+  'ys': 'Yunnan Sourcing',
+  'yunnansourcing': 'Yunnan Sourcing',
+  'bitterleaf': 'Bitterleaf Teas',
+  'bt': 'Bitterleaf Teas',
+  'tgy': 'Tea from Taiwan',
+  'eot': 'Essence of Tea',
+  'lp': 'Liquid Proust',
+  'teamania': 'Teamania',
 };

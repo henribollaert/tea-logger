@@ -1,11 +1,10 @@
-// src/components/common/TeaForm.js - Enhanced with form validation
-import React, { useEffect } from 'react';
+// src/components/common/TeaForm.js - Fixed infinite update loop
+import React, { useEffect, useRef } from 'react';
 import { useForm } from '../../hooks/useForm';
 import { 
   TextField, 
   SelectField, 
-  TextAreaField,
-  SubmitButton 
+  TextAreaField
 } from './FormFields';
 
 const TeaForm = React.memo(({ 
@@ -14,6 +13,9 @@ const TeaForm = React.memo(({
   onCancel, 
   isEditing = false 
 }) => {
+  // Use a ref to track the previous tea object for proper comparison
+  const prevTeaRef = useRef();
+  
   // Validation schema
   const validationSchema = {
     name: {
@@ -45,20 +47,53 @@ const TeaForm = React.memo(({
     handleBlur,
     handleSubmit,
     isSubmitting,
-    isDirty,
-    isValid,
     setValues
-  } = useForm(tea, validationSchema);
+  } = useForm(tea || {
+    id: null,
+    name: '',
+    type: '',
+    vendor: '',
+    year: '',
+    notes: ''
+  }, validationSchema);
   
-  // Update form values when tea prop changes
+  // Update form values when tea prop changes - fixed to avoid infinite loop
   useEffect(() => {
-    setValues(tea);
-  }, [tea, setValues]);
+    // Only check if the tea object reference changed
+    if (tea && tea !== prevTeaRef.current) {
+      console.log('Tea object reference changed, updating form values', tea);
+      
+      // Store the current tea object for next comparison
+      prevTeaRef.current = tea;
+      
+      // Update form values
+      setValues(tea);
+    }
+  }, [tea, setValues]); // Remove values from deps array
   
   // Handle form submission
   const submitForm = async (formData) => {
-    await onSave(formData);
+    console.log('Submitting tea form with data:', formData);
+    
+    // Preserve the original ID when editing
+    const dataToSave = {
+      ...formData
+    };
+    
+    if (isEditing && tea?.id) {
+      // Ensure the ID is included for updates
+      dataToSave.id = tea.id;
+    }
+    
+    // Log the data being saved
+    console.log('Data being saved:', dataToSave);
+    
+    // Call the onSave callback
+    await onSave(dataToSave);
   };
+  
+  // Prevent form submission if name is empty
+  const isFormValid = values.name && values.name.trim().length > 0;
   
   return (
     <div className="tea-form">
@@ -70,7 +105,7 @@ const TeaForm = React.memo(({
         <TextField
           label="Tea Name"
           name="name"
-          value={values.name}
+          value={values.name || ''}
           onChange={handleChange}
           onBlur={handleBlur}
           error={errors.name}
@@ -82,7 +117,7 @@ const TeaForm = React.memo(({
         <SelectField
           label="Tea Type"
           name="type"
-          value={values.type}
+          value={values.type || ''}
           onChange={handleChange}
           onBlur={handleBlur}
           error={errors.type}
@@ -94,7 +129,7 @@ const TeaForm = React.memo(({
         <TextField
           label="Vendor"
           name="vendor"
-          value={values.vendor}
+          value={values.vendor || ''}
           onChange={handleChange}
           onBlur={handleBlur}
           error={errors.vendor}
@@ -105,7 +140,7 @@ const TeaForm = React.memo(({
         <TextField
           label="Year/Age"
           name="year"
-          value={values.year}
+          value={values.year || ''}
           onChange={handleChange}
           onBlur={handleBlur}
           error={errors.year}
@@ -117,7 +152,7 @@ const TeaForm = React.memo(({
         <TextAreaField
           label="Notes"
           name="notes"
-          value={values.notes}
+          value={values.notes || ''}
           onChange={handleChange}
           onBlur={handleBlur}
           error={errors.notes}
@@ -135,13 +170,13 @@ const TeaForm = React.memo(({
             Cancel
           </button>
           
-          <SubmitButton
-            isSubmitting={isSubmitting}
-            isValid={isValid}
-            isDirty={isDirty}
+          <button
+            type="submit"
+            className="save-button"
+            disabled={isSubmitting || !isFormValid}
           >
-            {isEditing ? 'Update Tea' : 'Add Tea'}
-          </SubmitButton>
+            {isSubmitting ? 'Saving...' : isEditing ? 'Update Tea' : 'Add Tea'}
+          </button>
         </div>
       </form>
     </div>

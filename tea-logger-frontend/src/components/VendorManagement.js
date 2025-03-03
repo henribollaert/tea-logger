@@ -1,129 +1,206 @@
-import React, { useState, useEffect } from 'react';
+// src/components/VendorManagement.js - Fixed error handling
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, X, Plus, Trash, ChevronDown, ChevronUp } from 'lucide-react';
 import './VendorManagement.css';
+import { fetchDashboardData } from '../api';
+import { normalizeVendorName } from '../teaApi';
+
+// Import custom hooks
+import { useNotification } from '../hooks/useNotification';
+import { useModal } from '../hooks/useModal';
+
+// Import common components
+import { TextField } from './common/FormFields';
+import { SkeletonTeaList } from './common/Skeleton';
+import ErrorDisplay from './common/ErrorDisplay';
 
 const VendorManagement = () => {
   const navigate = useNavigate();
+  
+  // Use custom hooks
+  const { notification, showNotification } = useNotification();
+  const { isOpen: showDeleteConfirm, modalData: vendorToDelete, openModal, closeModal } = useModal();
+  
+  // Component state
   const [vendors, setVendors] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [isAddingVendor, setIsAddingVendor] = useState(false);
   const [expandedVendor, setExpandedVendor] = useState(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [vendorToDelete, setVendorToDelete] = useState(null);
-  const [notification, setNotification] = useState('');
   const [newVendor, setNewVendor] = useState({
     name: '',
     aliases: [],
     newAlias: ''
   });
-
-  // Load vendors from localStorage on component mount
-  useEffect(() => {
-    const storedVendors = localStorage.getItem('teaVendors');
-    if (storedVendors) {
-      setVendors(JSON.parse(storedVendors));
-    } else {
-      // Load default vendors if none exist
-      const defaultVendors = [
-        { 
-          id: 1, 
-          name: 'White2Tea', 
-          aliases: ['w2t', 'white2tea'],
-          teas: []
-        },
-        { 
-          id: 2, 
-          name: 'Crimson Lotus Tea', 
-          aliases: ['clt', 'crimson'],
-          teas: []
-        },
-        { 
-          id: 3, 
-          name: 'Yunnan Sourcing', 
-          aliases: ['ys', 'yunnansourcing'],
-          teas: []
-        },
-        { 
-          id: 4, 
-          name: 'Bitterleaf Teas', 
-          aliases: ['bt', 'bitterleaf'],
-          teas: []
-        },
-        { 
-          id: 5, 
-          name: 'Essence of Tea', 
-          aliases: ['eot'],
-          teas: []
+  
+  // Safer way to handle vendor data population
+  const populateVendorTeas = useCallback((vendorList, teaList) => {
+    if (!Array.isArray(vendorList) || !Array.isArray(teaList)) {
+      console.warn('Invalid data for populateVendorTeas', { vendorList, teaList });
+      return vendorList;
+    }
+    
+    try {
+      // Create a map of vendor names to lists of teas
+      const vendorTeaMap = new Map();
+      
+      // Initialize map with empty arrays for each vendor
+      vendorList.forEach(vendor => {
+        if (vendor && vendor.name) {
+          vendorTeaMap.set(vendor.name.toLowerCase(), []);
+          
+          // Also add entries for aliases
+          if (Array.isArray(vendor.aliases)) {
+            vendor.aliases.forEach(alias => {
+              if (alias) {
+                vendorTeaMap.set(alias.toLowerCase(), vendor.name);
+              }
+            });
+          }
         }
-      ];
-      setVendors(defaultVendors);
-      localStorage.setItem('teaVendors', JSON.stringify(defaultVendors));
+      });
+      
+      // Populate the map with teas
+      teaList.forEach(tea => {
+        if (tea && tea.vendor) {
+          try {
+            const normalizedVendor = normalizeVendorName(tea.vendor);
+            const vendorKey = normalizedVendor.toLowerCase();
+            
+            if (vendorTeaMap.has(vendorKey)) {
+              // Direct vendor match
+              const vendorTeas = vendorTeaMap.get(vendorKey);
+              if (Array.isArray(vendorTeas)) {
+                vendorTeas.push(tea);
+              }
+            } else {
+              // Check if it's an alias
+              const aliasValue = vendorTeaMap.get(vendorKey);
+              if (typeof aliasValue === 'string') {
+                const actualVendorKey = aliasValue.toLowerCase();
+                const vendorTeas = vendorTeaMap.get(actualVendorKey);
+                if (Array.isArray(vendorTeas)) {
+                  vendorTeas.push(tea);
+                }
+              }
+            }
+          } catch (error) {
+            console.warn(`Error processing tea: ${tea.name}`, error);
+          }
+        }
+      });
+      
+      // Update vendors with teas
+      const updatedVendors = vendorList.map(vendor => {
+        if (!vendor || !vendor.name) return vendor;
+        
+        const vendorTeas = vendorTeaMap.get(vendor.name.toLowerCase()) || [];
+        return {
+          ...vendor,
+          teas: vendorTeas
+        };
+      });
+      
+      // Update state and storage
+      setVendors(updatedVendors);
+      localStorage.setItem('teaVendors', JSON.stringify(updatedVendors));
+      
+      return updatedVendors;
+    } catch (error) {
+      console.error('Error in populateVendorTeas:', error);
+      return vendorList;
     }
   }, []);
 
-  // Load teas to populate vendor tea lists
+  // Load vendors from localStorage on component mount
   useEffect(() => {
-    const populateVendorTeas = async () => {
+    const loadData = async () => {
+      setIsLoading(true);
+      setLoadError(null);
+      
       try {
-        // Get all sessions
-        const response = await fetch('http://127.0.0.1:5000/api/sessions');
-        if (!response.ok) {
-          throw new Error('Failed to fetch sessions');
+        // Load vendors safely
+        let vendorList = [];
+        try {
+          const storedVendors = localStorage.getItem('teaVendors');
+          if (storedVendors) {
+            vendorList = JSON.parse(storedVendors);
+          }
+        } catch (parseError) {
+          console.warn('Error parsing stored vendors, using defaults:', parseError);
         }
         
-        const sessions = await response.json();
-        
-        // Extract unique teas per vendor
-        const vendorTeaMap = new Map();
-        
-        sessions.forEach(session => {
-          if (session.vendor) {
-            if (!vendorTeaMap.has(session.vendor)) {
-              vendorTeaMap.set(session.vendor, new Set());
+        // If no vendors or parsing failed, use defaults
+        if (!Array.isArray(vendorList) || vendorList.length === 0) {
+          vendorList = [
+            { 
+              id: 1, 
+              name: 'White2Tea', 
+              aliases: ['w2t', 'white2tea'],
+              teas: []
+            },
+            { 
+              id: 2, 
+              name: 'Crimson Lotus Tea', 
+              aliases: ['clt', 'crimson'],
+              teas: []
+            },
+            { 
+              id: 3, 
+              name: 'Yunnan Sourcing', 
+              aliases: ['ys', 'yunnansourcing'],
+              teas: []
+            },
+            { 
+              id: 4, 
+              name: 'Bitterleaf Teas', 
+              aliases: ['bt', 'bitterleaf'],
+              teas: []
+            },
+            { 
+              id: 5, 
+              name: 'Essence of Tea', 
+              aliases: ['eot'],
+              teas: []
             }
-            vendorTeaMap.get(session.vendor).add(session.name);
-          }
-        });
+          ];
+          localStorage.setItem('teaVendors', JSON.stringify(vendorList));
+        }
         
-        // Update vendors with teas
-        if (vendorTeaMap.size > 0) {
-          const updatedVendors = vendors.map(vendor => {
-            const teas = vendorTeaMap.get(vendor.name);
-            if (teas) {
-              return {
-                ...vendor,
-                teas: Array.from(teas)
-              };
-            }
-            return vendor;
-          });
-          
-          setVendors(updatedVendors);
-          localStorage.setItem('teaVendors', JSON.stringify(updatedVendors));
+        // First set vendors without teas
+        setVendors(vendorList);
+        
+        // Load teas to populate vendor tea lists
+        const dashboardData = await fetchDashboardData();
+        
+        if (dashboardData && Array.isArray(dashboardData.teas)) {
+          // Populate vendor teas
+          populateVendorTeas(vendorList, dashboardData.teas);
+        } else {
+          console.warn('Dashboard data missing teas', dashboardData);
         }
       } catch (error) {
-        console.error('Error loading teas for vendors:', error);
+        console.error('Error loading data:', error);
+        setLoadError(error);
+        showNotification('Error loading vendors');
+      } finally {
+        setIsLoading(false);
       }
     };
     
-    if (vendors.length > 0) {
-      populateVendorTeas();
-    }
-  }, [vendors.length]);
+    loadData();
+  }, [showNotification, populateVendorTeas]);
 
-  // Save vendors to localStorage whenever they change
-  useEffect(() => {
-    if (vendors.length > 0) {
-      localStorage.setItem('teaVendors', JSON.stringify(vendors));
-    }
-  }, [vendors]);
+  // Handle retrying data load
+  const handleRetryLoading = useCallback(() => {
+    setLoadError(null);
+    window.location.reload();
+  }, []);
 
-  // Filter vendors based on search term
-  const filteredVendors = vendors.filter(vendor => 
-    vendor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vendor.aliases.some(alias => alias.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Safe filtering of vendors
+  const filteredVendors = useSafeFilter(vendors, searchTerm);
 
   const handleVendorChange = (e) => {
     const { name, value } = e.target;
@@ -134,7 +211,7 @@ const VendorManagement = () => {
   };
 
   const handleAddAlias = () => {
-    if (!newVendor.newAlias.trim()) return;
+    if (!newVendor.newAlias?.trim()) return;
     
     setNewVendor(prev => ({
       ...prev,
@@ -151,19 +228,35 @@ const VendorManagement = () => {
   };
 
   const handleAddVendor = () => {
-    if (!newVendor.name.trim()) return;
+    if (!newVendor.name?.trim()) return;
+    
+    // Normalize the vendor name for consistency
+    const normalizedName = normalizeVendorName(newVendor.name);
+    
+    // Check if vendor with this name already exists
+    const existingVendor = vendors.find(v => 
+      v.name?.toLowerCase() === normalizedName.toLowerCase()
+    );
+    
+    if (existingVendor) {
+      showNotification(`Vendor "${normalizedName}" already exists`);
+      return;
+    }
     
     const newVendorObj = {
       id: Date.now(),
-      name: newVendor.name.trim(),
-      aliases: newVendor.aliases,
+      name: normalizedName,
+      aliases: newVendor.aliases || [],
       teas: []
     };
     
-    setVendors(prev => [...prev, newVendorObj]);
+    const updatedVendors = [...vendors, newVendorObj];
+    setVendors(updatedVendors);
     setIsAddingVendor(false);
-    setNotification('Vendor added successfully');
-    setTimeout(() => setNotification(''), 3000);
+    showNotification('Vendor added successfully');
+    
+    // Save to localStorage
+    localStorage.setItem('teaVendors', JSON.stringify(updatedVendors));
     
     // Reset form
     setNewVendor({
@@ -174,18 +267,19 @@ const VendorManagement = () => {
   };
 
   const handleDeleteClick = (vendor) => {
-    setVendorToDelete(vendor);
-    setShowDeleteConfirm(true);
+    openModal(vendor);
   };
 
   const handleDeleteVendor = () => {
     if (!vendorToDelete) return;
     
-    setVendors(prev => prev.filter(v => v.id !== vendorToDelete.id));
-    setShowDeleteConfirm(false);
-    setVendorToDelete(null);
-    setNotification('Vendor deleted successfully');
-    setTimeout(() => setNotification(''), 3000);
+    const updatedVendors = vendors.filter(v => v.id !== vendorToDelete.id);
+    setVendors(updatedVendors);
+    closeModal();
+    showNotification('Vendor deleted successfully');
+    
+    // Save to localStorage
+    localStorage.setItem('teaVendors', JSON.stringify(updatedVendors));
   };
 
   const toggleVendorExpand = (vendorId) => {
@@ -194,6 +288,96 @@ const VendorManagement = () => {
     } else {
       setExpandedVendor(vendorId);
     }
+  };
+
+  // Render content based on state
+  const renderContent = () => {
+    if (isLoading) {
+      return <SkeletonTeaList count={3} />;
+    }
+    
+    if (loadError) {
+      return (
+        <ErrorDisplay 
+          error={loadError}
+          message="We couldn't load your vendor information"
+          onRetry={handleRetryLoading}
+          showHome={false}
+        />
+      );
+    }
+    
+    if (filteredVendors.length === 0) {
+      return (
+        <div className="empty-state">
+          {searchTerm 
+            ? "No vendors match your search." 
+            : "No vendors added yet. Add your first vendor!"}
+        </div>
+      );
+    }
+    
+    return (
+      <div className="vendors-list">
+        {filteredVendors.map(vendor => (
+          <div key={vendor.id} className="vendor-card">
+            <div 
+              className="vendor-header"
+              onClick={() => toggleVendorExpand(vendor.id)}
+            >
+              <div className="vendor-name">{vendor.name}</div>
+              <div className="vendor-controls">
+                <button
+                  className="action-button delete-button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteClick(vendor);
+                  }}
+                  aria-label="Delete vendor"
+                >
+                  <Trash size={16} />
+                </button>
+                <button className="action-button expand-button">
+                  {expandedVendor === vendor.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+              </div>
+            </div>
+            
+            {expandedVendor === vendor.id && (
+              <div className="vendor-details">
+                <div className="vendor-aliases">
+                  <h4>Aliases</h4>
+                  {!vendor.aliases || vendor.aliases.length === 0 ? (
+                    <p className="empty-info">No aliases added</p>
+                  ) : (
+                    <div className="aliases-container">
+                      {vendor.aliases.map((alias, index) => (
+                        <span key={index} className="alias-chip">{alias}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="vendor-teas">
+                  <h4>Teas</h4>
+                  {!vendor.teas || vendor.teas.length === 0 ? (
+                    <p className="empty-info">No teas found from this vendor</p>
+                  ) : (
+                    <div className="teas-container">
+                      {vendor.teas.map((tea, index) => (
+                        <div key={index} className="tea-item" onClick={() => navigate('/collection')}>
+                          {tea.name}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -231,15 +415,13 @@ const VendorManagement = () => {
             <h3 className="form-title">Add New Vendor</h3>
             
             <div className="form-group">
-              <label htmlFor="name">Vendor Name*</label>
-              <input
-                type="text"
-                id="name"
+              <TextField
+                label="Vendor Name"
                 name="name"
                 value={newVendor.name}
                 onChange={handleVendorChange}
-                className="form-input"
                 required
+                placeholder="Enter vendor name"
               />
             </div>
             
@@ -257,12 +439,12 @@ const VendorManagement = () => {
                 <button 
                   onClick={handleAddAlias}
                   className="add-alias-button"
-                  disabled={!newVendor.newAlias.trim()}
+                  disabled={!newVendor.newAlias?.trim()}
                 >
                   <Plus size={16} />
                 </button>
               </div>
-              {newVendor.aliases.length > 0 && (
+              {newVendor.aliases && newVendor.aliases.length > 0 && (
                 <div className="alias-list">
                   {newVendor.aliases.map((alias, index) => (
                     <div key={index} className="alias-tag">
@@ -292,7 +474,7 @@ const VendorManagement = () => {
               <button 
                 className="save-button"
                 onClick={handleAddVendor}
-                disabled={!newVendor.name.trim()}
+                disabled={!newVendor.name?.trim()}
               >
                 Add Vendor
               </button>
@@ -324,73 +506,7 @@ const VendorManagement = () => {
         </div>
         
         {/* Vendors List */}
-        <div className="vendors-list">
-          {filteredVendors.length === 0 ? (
-            <div className="empty-state">
-              {searchTerm 
-                ? "No vendors match your search." 
-                : "No vendors added yet. Add your first vendor!"}
-            </div>
-          ) : (
-            filteredVendors.map(vendor => (
-              <div key={vendor.id} className="vendor-card">
-                <div 
-                  className="vendor-header"
-                  onClick={() => toggleVendorExpand(vendor.id)}
-                >
-                  <div className="vendor-name">{vendor.name}</div>
-                  <div className="vendor-controls">
-                    <button
-                      className="action-button delete-button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteClick(vendor);
-                      }}
-                      aria-label="Delete vendor"
-                    >
-                      <Trash size={16} />
-                    </button>
-                    <button className="action-button expand-button">
-                      {expandedVendor === vendor.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </button>
-                  </div>
-                </div>
-                
-                {expandedVendor === vendor.id && (
-                  <div className="vendor-details">
-                    <div className="vendor-aliases">
-                      <h4>Aliases</h4>
-                      {vendor.aliases.length === 0 ? (
-                        <p className="empty-info">No aliases added</p>
-                      ) : (
-                        <div className="aliases-container">
-                          {vendor.aliases.map((alias, index) => (
-                            <span key={index} className="alias-chip">{alias}</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="vendor-teas">
-                      <h4>Teas</h4>
-                      {vendor.teas.length === 0 ? (
-                        <p className="empty-info">No teas found from this vendor</p>
-                      ) : (
-                        <div className="teas-container">
-                          {vendor.teas.map((tea, index) => (
-                            <div key={index} className="tea-item" onClick={() => navigate('/collection')}>
-                              {tea}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
+        {renderContent()}
       </div>
       
       {/* Delete Confirmation Modal */}
@@ -405,8 +521,7 @@ const VendorManagement = () => {
               <button 
                 className="cancel-button"
                 onClick={() => {
-                  setShowDeleteConfirm(false);
-                  setVendorToDelete(null);
+                  closeModal();
                 }}
               >
                 Cancel
@@ -424,5 +539,29 @@ const VendorManagement = () => {
     </div>
   );
 };
+
+// Helper function for safely filtering vendors
+function useSafeFilter(vendors, searchTerm) {
+  if (!Array.isArray(vendors)) return [];
+  if (!searchTerm) return vendors;
+  
+  const term = searchTerm.toLowerCase();
+  return vendors.filter(vendor => {
+    // Check for null vendor
+    if (!vendor) return false;
+    
+    // Check name match
+    if (vendor.name && vendor.name.toLowerCase().includes(term)) {
+      return true;
+    }
+    
+    // Check aliases
+    if (Array.isArray(vendor.aliases)) {
+      return vendor.aliases.some(alias => alias && alias.toLowerCase().includes(term));
+    }
+    
+    return false;
+  });
+}
 
 export default VendorManagement;
