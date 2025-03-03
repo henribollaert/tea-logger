@@ -1,116 +1,157 @@
 // src/utils/apiErrorHandler.js
-
 /**
- * Handles API request errors with retry capability
- * @param {Function} apiCall - The API function to call
- * @param {Object} options - Options for error handling
- * @param {number} options.maxRetries - Maximum number of retry attempts
- * @param {number} options.retryDelay - Base delay between retries in ms
- * @param {Function} options.onError - Optional callback when error occurs
- * @returns {Promise} - Result of the API call or throws enhanced error
+ * Creates an enhanced API client with automatic retries and error handling
+ * 
+ * @param {Object} options - Configuration options
+ * @param {number} options.maxRetries - Maximum number of retry attempts (default: 3)
+ * @param {number} options.retryDelay - Base delay in ms between retries, will use exponential backoff (default: 1000)
+ * @param {Function} options.onError - Optional callback for handling errors
+ * @returns {Function} - Enhanced fetch function that handles errors and retries
  */
-export const withErrorHandling = async (apiCall, options = {}) => {
-    const {
-      maxRetries = 3,
-      retryDelay = 1000,
-      onError = null,
-    } = options;
-    
+export const createApiClient = (options = {}) => {
+  const { 
+    maxRetries = 3, 
+    retryDelay = 1000,
+    onError = null
+  } = options;
+  
+  return async (url, config = {}) => {
     let lastError;
     
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // Attempt the API call
-        return await apiCall();
-      } catch (error) {
-        lastError = error;
+        console.log(`API request to ${url} (attempt ${attempt}/${maxRetries})`);
+        const response = await fetch(url, config);
         
-        // Determine if we should retry based on the error
-        const shouldRetry = (
-          attempt < maxRetries && 
-          isRetryableError(error)
-        );
-        
-        if (onError) {
-          onError(error, { attempt, maxRetries, willRetry: shouldRetry });
-        }
-        
-        if (!shouldRetry) break;
-        
-        // Exponential backoff with jitter
-        const delay = retryDelay * Math.pow(2, attempt) * (0.9 + Math.random() * 0.2);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-    
-    // If we got here, all retries failed
-    // Enhance the error with additional information
-    const enhancedError = new Error(
-      lastError.message || 'API request failed after multiple attempts'
-    );
-    enhancedError.originalError = lastError;
-    enhancedError.retriesExhausted = true;
-    
-    throw enhancedError;
-  };
-  
-  /**
-   * Determines if an error is retryable
-   * @param {Error} error - The error to check
-   * @returns {boolean} - Whether the error is retryable
-   */
-  const isRetryableError = (error) => {
-    // Network errors are retryable
-    if (error.name === 'NetworkError' || 
-        error.message?.includes('NetworkError') || 
-        error.message?.includes('Failed to fetch')) {
-      return true;
-    }
-    
-    // Check for specific status codes that indicate temporary issues
-    const statusCode = error.status || (error.response && error.response.status);
-    if (statusCode) {
-      // 408 Request Timeout, 429 Too Many Requests, 5xx Server errors
-      return [408, 429, 500, 502, 503, 504].includes(statusCode);
-    }
-    
-    return false;
-  };
-  
-  /**
-   * Creates an enhanced fetch function with error handling and retry logic
-   * @param {Object} options - Options for error handling
-   * @returns {Function} - Enhanced fetch function
-   */
-  export const createApiClient = (options = {}) => {
-    return async (url, fetchOptions = {}) => {
-      const apiCall = async () => {
-        const response = await fetch(url, fetchOptions);
-        
-        // Check if the response is successful
         if (!response.ok) {
-          const error = new Error(`Request failed with status ${response.status}`);
-          error.status = response.status;
-          error.statusText = response.statusText;
-          
-          // Try to parse error response
+          // Try to get error details from response body
+          let errorData = {};
           try {
-            error.data = await response.json();
+            errorData = await response.json();
           } catch (e) {
-            // If parsing fails, just use text
-            error.data = await response.text();
+            // If not JSON, just continue with status text
+          }
+          
+          const error = {
+            status: response.status,
+            statusText: response.statusText,
+            message: errorData.error || response.statusText,
+            data: errorData
+          };
+          
+          console.warn(`API request failed with status ${response.status}: ${error.message}`);
+          
+          // For certain error types, don't retry
+          if (response.status === 404) {
+            throw error;
+          }
+          
+          lastError = error;
+          
+          // Call the error handler if provided
+          if (onError) {
+            onError(error, { 
+              attempt, 
+              maxRetries, 
+              willRetry: attempt < maxRetries 
+            });
+          }
+          
+          // If not the last attempt, retry after delay
+          if (attempt < maxRetries) {
+            const delay = retryDelay * Math.pow(2, attempt - 1);
+            console.log(`Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
           }
           
           throw error;
         }
         
-        return response.json();
-      };
-      
-      return withErrorHandling(apiCall, options);
-    };
+        // Success - parse JSON response
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        // Network or parsing errors
+        console.error(`API request error:`, error);
+        lastError = error;
+        
+        // Call the error handler if provided
+        if (onError) {
+          onError(error, { 
+            attempt, 
+            maxRetries, 
+            willRetry: attempt < maxRetries 
+          });
+        }
+        
+        // If not the last attempt, retry after delay
+        if (attempt < maxRetries) {
+          const delay = retryDelay * Math.pow(2, attempt - 1);
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        throw error;
+      }
+    }
+    
+    // This should never be reached, but just in case
+    throw lastError || new Error('API request failed after retries');
   };
+};
+
+/**
+ * Helper to handle fetch with error handling, but without retry logic
+ * 
+ * @param {string} url - The URL to fetch
+ * @param {Object} options - Fetch options
+ * @returns {Promise<any>} - The parsed JSON response
+ */
+export const fetchWithErrorHandling = async (url, options = {}) => {
+  try {
+    const response = await fetch(url, options);
+    
+    if (!response.ok) {
+      let errorData = {};
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        // If not JSON, just continue with status text
+      }
+      
+      throw {
+        status: response.status,
+        statusText: response.statusText,
+        message: errorData.error || response.statusText,
+        data: errorData
+      };
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Fetch error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Helper to stringify and parse objects with special handling for circular references
+ * Useful for debugging and logging API responses
+ */
+export const safeStringify = (obj, indent = 2) => {
+  let cache = [];
+  const result = JSON.stringify(obj, (key, value) => {
+    if (typeof value === 'object' && value !== null) {
+      if (cache.includes(value)) {
+        return '[Circular Reference]';
+      }
+      cache.push(value);
+    }
+    return value;
+  }, indent);
   
-  // Example usage:
-  // const apiClient = createApiClient({ maxRetries: 3 });
-  // const data = await apiClient('/api/sessions');
+  cache = null; // Enable garbage collection
+  return result;
+};

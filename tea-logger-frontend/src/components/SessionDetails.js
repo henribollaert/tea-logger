@@ -1,4 +1,4 @@
-// src/components/SessionDetails.js (with skeleton loading states)
+// src/components/SessionDetails.js (fixed saving session notes)
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, Trash, ExternalLink } from 'lucide-react';
@@ -60,6 +60,7 @@ const SessionDetails = () => {
       try {
         // Use the consolidated endpoint
         const data = await fetchSessionDetails(id);
+        console.log('Loaded session details:', data);
         
         setSession(data.session);
         setTea(data.tea);
@@ -84,11 +85,23 @@ const SessionDetails = () => {
   }, []);
 
   const saveSession = useCallback(async (formData) => {
+    if (!session || !session.id) {
+      console.error('Cannot save session: session is null or missing ID');
+      showNotification('Error: Session data is missing');
+      return;
+    }
+
+    console.log('Saving session notes:', formData);
     setIsSaving(true);
     
     try {
       // Only update the notes field
-      const updatedSession = await updateSession(session.id, { notes: formData.notes });
+      const updatedSession = await updateSession(session.id, { 
+        notes: formData.notes 
+      });
+      
+      console.log('Update session response:', updatedSession);
+      
       if (updatedSession) {
         showNotification('Session notes updated successfully');
         setSession(updatedSession);
@@ -98,13 +111,14 @@ const SessionDetails = () => {
     } catch (error) {
       console.error('Error updating session:', error);
       showNotification('Error updating session notes');
-      throw error; // Allow form error handling to catch this
     } finally {
       setIsSaving(false);
     }
   }, [session, showNotification]);
 
   const handleDelete = useCallback(async () => {
+    if (!session) return;
+    
     setIsDeleting(true);
     
     try {
@@ -137,6 +151,12 @@ const SessionDetails = () => {
       navigate('/collection');
     }
   }, [tea, navigate]);
+
+  const handleNotesSubmit = useCallback((e) => {
+    e.preventDefault();
+    console.log('Submitting notes form with values:', sessionForm);
+    saveSession(sessionForm);
+  }, [sessionForm, saveSession]);
 
   // Render different states
   if (isLoading) {
@@ -225,7 +245,7 @@ const SessionDetails = () => {
           <div className="notification">{notification}</div>
         )}
       
-        <form className="session-form" onSubmit={handleSubmit(saveSession)}>
+        <form className="session-form" onSubmit={handleNotesSubmit}>
           <div className="session-tea-info">
             <div className="tea-header">
               <h2 className="tea-title">
@@ -251,27 +271,33 @@ const SessionDetails = () => {
           
           <div className="form-divider"></div>
           
-          <TextAreaField
-            label="Tasting Notes"
-            name="notes"
-            value={sessionForm.notes}
-            onChange={handleChange}
-            onBlur={handleBlur}
-            error={errors.notes}
-            touched={touched.notes}
-            rows={4}
-            placeholder="Record your impressions, flavors, aromas..."
-            helpText="Share your thoughts about this tea session"
-          />
+          <div className="form-group">
+            <label htmlFor="notes" className="form-label">
+              Tasting Notes
+            </label>
+            <textarea
+              id="notes"
+              name="notes"
+              value={sessionForm.notes || ''}
+              onChange={handleChange}
+              onBlur={handleBlur}
+              className={`form-textarea ${errors.notes && touched.notes ? 'input-error' : ''}`}
+              rows={4}
+              placeholder="Record your impressions, flavors, aromas..."
+            />
+            {errors.notes && touched.notes && (
+              <div className="form-error-message">{errors.notes}</div>
+            )}
+          </div>
           
           <div className="session-actions">
-            <SubmitButton 
-              isSubmitting={isSaving}
-              isValid={isValid}
-              isDirty={isDirty}
+            <button 
+              type="submit"
+              className="save-button"
+              disabled={isSaving}
             >
-              Save Notes
-            </SubmitButton>
+              {isSaving ? 'Saving...' : 'Save Notes'}
+            </button>
           </div>
         </form>
       </div>

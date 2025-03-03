@@ -1,4 +1,4 @@
-// src/hooks/useForm.js - Complete rewrite with stable update pattern
+// src/hooks/useForm.js - Fixed with stable update pattern
 import { useState, useCallback, useRef } from 'react';
 
 export function useForm(initialValues, validationSchema = {}) {
@@ -13,8 +13,8 @@ export function useForm(initialValues, validationSchema = {}) {
   const isValidatingRef = useRef(false);
   const lastValuesRef = useRef(values);
   
-  // Helper function to validate a single field - not a hook dependency
-  const validateField = (name, value) => {
+  // Helper function to validate a single field
+  const validateField = useCallback((name, value) => {
     // No validation schema means field is valid
     if (!validationSchema[name]) {
       return { isValid: true };
@@ -70,18 +70,22 @@ export function useForm(initialValues, validationSchema = {}) {
       isValid: fieldIsValid,
       errorMessage: fieldIsValid ? undefined : errorMessage
     };
-  };
+  }, [validationSchema, values]);
 
   // Update form values
   const setFormValues = useCallback((newValues) => {
+    console.log('Setting form values:', newValues);
     // Update values
     setValues(newValues);
     // Set last values ref
     lastValuesRef.current = newValues;
+    // Mark as dirty since values changed
+    setIsDirty(true);
   }, []);
 
   // Reset form to initial values
   const reset = useCallback((newValues = initialValues) => {
+    console.log('Resetting form to:', newValues);
     setFormValues(newValues);
     setErrors({});
     setTouched({});
@@ -92,6 +96,7 @@ export function useForm(initialValues, validationSchema = {}) {
 
   // Set a single value
   const setValue = useCallback((name, value) => {
+    console.log(`Setting field ${name} to:`, value);
     // Update only this field
     setValues(prev => {
       const updated = { ...prev, [name]: value };
@@ -114,12 +119,14 @@ export function useForm(initialValues, validationSchema = {}) {
         });
       }
     }
-  }, [touched]);
+  }, [touched, validateField]);
 
   // Handle form input changes
   const handleChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
     const inputValue = type === 'checkbox' ? checked : value;
+    
+    console.log(`Field ${name} changed to:`, inputValue);
     
     // Update the value
     setValue(name, inputValue);
@@ -152,13 +159,14 @@ export function useForm(initialValues, validationSchema = {}) {
         });
       }
     }
-  }, [values, validationSchema, touched]);
+  }, [values, validationSchema, touched, validateField]);
 
   // Validate all form fields
   const validateForm = useCallback(() => {
     if (isValidatingRef.current) return true;
     
     isValidatingRef.current = true;
+    console.log('Validating form with values:', values);
     
     let formIsValid = true;
     const newErrors = {};
@@ -183,8 +191,9 @@ export function useForm(initialValues, validationSchema = {}) {
     setIsValid(formIsValid);
     
     isValidatingRef.current = false;
+    console.log('Form validation result:', formIsValid, newErrors);
     return formIsValid;
-  }, [values, validationSchema]);
+  }, [values, validationSchema, validateField]);
 
   // Handle form submission
   const handleSubmit = useCallback((submitFn) => {
@@ -192,6 +201,7 @@ export function useForm(initialValues, validationSchema = {}) {
       if (e) e.preventDefault();
       
       setIsSubmitting(true);
+      console.log('Form submitted with values:', values);
       
       // Validate all fields
       const isFormValid = validateForm();

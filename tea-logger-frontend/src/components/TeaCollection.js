@@ -1,4 +1,4 @@
-// src/components/TeaCollection.js - Linting fixed
+// src/components/TeaCollection.js - Fixed tea creation
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, X, Plus } from 'lucide-react';
@@ -52,6 +52,7 @@ const TeaCollection = () => {
       
       try {
         const dashboardData = await fetchDashboardData();
+        console.log('Dashboard data loaded:', dashboardData);
         
         const teasWithStats = dashboardData.teas.map(tea => {
           const teaId = tea.id.toString();
@@ -141,34 +142,65 @@ const TeaCollection = () => {
   }, []);
 
   const handleAddTea = useCallback(async (teaData) => {
-    if (!teaData.name.trim()) return;
+    if (!teaData.name.trim()) {
+      showNotification('Tea name cannot be empty');
+      return;
+    }
     
     try {
       console.log('Creating new tea:', teaData);
       
-      const createdTea = await createTea({
+      // Make sure teaData is properly structured
+      const newTeaData = {
         name: teaData.name.trim(),
         type: teaData.type || '',
         vendor: teaData.vendor || '',
         year: teaData.year || '',
         notes: teaData.notes || ''
-      });
-      
-      const teaWithStats = {
-        ...createdTea,
-        sessionCount: 0,
-        lastBrewed: null,
-        sessions: []
       };
       
-      setTeas(prev => [...prev, teaWithStats]);
-      setIsAddingTea(false);
-      showNotification('Tea added to collection');
+      const createdTea = await createTea(newTeaData);
+      console.log('Created tea result:', createdTea);
+      
+      if (createdTea && createdTea.id) {
+        const teaWithStats = {
+          ...createdTea,
+          sessionCount: 0,
+          lastBrewed: null,
+          sessions: []
+        };
+        
+        setTeas(prev => [...prev, teaWithStats]);
+        setIsAddingTea(false);
+        showNotification('Tea added to collection');
+        
+        // Refresh data after adding a tea to ensure everything is in sync
+        const dashboardData = await fetchDashboardData(true);
+        const updatedTeas = dashboardData.teas.map(tea => {
+          const teaId = tea.id.toString();
+          const stats = dashboardData.teaStats[teaId] || {
+            sessionCount: 0,
+            lastBrewed: null,
+            sessionIds: []
+          };
+          
+          return {
+            ...tea,
+            sessionCount: stats.sessionCount,
+            lastBrewed: stats.lastBrewed,
+            sessions: []
+          };
+        });
+        
+        setTeas(updatedTeas);
+      } else {
+        showNotification('Error adding tea to collection');
+      }
     } catch (error) {
       console.error('Error adding tea:', error);
       showNotification('Error adding tea to collection');
     }
-  }, [showNotification]);
+  }, [showNotification, fetchDashboardData]);
 
   const handleEditTea = useCallback((tea) => {
     console.log('Setting up tea editing for:', tea);
@@ -178,6 +210,7 @@ const TeaCollection = () => {
   const handleUpdateTea = useCallback(async (teaData) => {
     if (!teaData.name.trim() || !teaData.id) {
       console.error('Invalid tea data for update:', teaData);
+      showNotification('Tea name cannot be empty');
       return;
     }
     
@@ -191,6 +224,8 @@ const TeaCollection = () => {
         year: teaData.year || '',
         notes: teaData.notes || ''
       });
+      
+      console.log('Updated tea response:', updatedTea);
       
       if (updatedTea) {
         setTeas(prev => prev.map(tea => {

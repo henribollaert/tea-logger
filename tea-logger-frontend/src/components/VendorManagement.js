@@ -1,5 +1,5 @@
 // src/components/VendorManagement.js - Fixed error handling
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, X, Plus, Trash, ChevronDown, ChevronUp } from 'lucide-react';
 import './VendorManagement.css';
@@ -199,8 +199,29 @@ const VendorManagement = () => {
     window.location.reload();
   }, []);
 
-  // Safe filtering of vendors
-  const filteredVendors = useSafeFilter(vendors, searchTerm);
+  // Safe filtering of vendors - Fixed implementation
+  const filteredVendors = useMemo(() => {
+    if (!Array.isArray(vendors)) return [];
+    if (!searchTerm) return vendors;
+    
+    const term = searchTerm.toLowerCase();
+    return vendors.filter(vendor => {
+      // Check for null vendor
+      if (!vendor) return false;
+      
+      // Check name match
+      if (vendor.name && vendor.name.toLowerCase().includes(term)) {
+        return true;
+      }
+      
+      // Check aliases
+      if (Array.isArray(vendor.aliases)) {
+        return vendor.aliases.some(alias => alias && alias.toLowerCase().includes(term));
+      }
+      
+      return false;
+    });
+  }, [vendors, searchTerm]);
 
   const handleVendorChange = (e) => {
     const { name, value } = e.target;
@@ -539,29 +560,5 @@ const VendorManagement = () => {
     </div>
   );
 };
-
-// Helper function for safely filtering vendors
-function useSafeFilter(vendors, searchTerm) {
-  if (!Array.isArray(vendors)) return [];
-  if (!searchTerm) return vendors;
-  
-  const term = searchTerm.toLowerCase();
-  return vendors.filter(vendor => {
-    // Check for null vendor
-    if (!vendor) return false;
-    
-    // Check name match
-    if (vendor.name && vendor.name.toLowerCase().includes(term)) {
-      return true;
-    }
-    
-    // Check aliases
-    if (Array.isArray(vendor.aliases)) {
-      return vendor.aliases.some(alias => alias && alias.toLowerCase().includes(term));
-    }
-    
-    return false;
-  });
-}
 
 export default VendorManagement;

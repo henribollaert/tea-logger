@@ -22,7 +22,7 @@ const addStorageParam = (url) => {
   return `${url}${url.includes('?') ? '&' : '?'}use_drive=${useGoogleDrive}&sync_interval=${syncInterval}`;
 };
 
-// Log detailed information about tea updates for debugging
+// Log detailed information about tea operations for debugging
 const logTeaOperation = (operation, tea, result) => {
   console.log(`Tea ${operation} operation:`, {
     tea,
@@ -54,7 +54,15 @@ export const fetchTeas = async (forceRefresh = false) => {
   }
   
   try {
-    const teas = await apiClient(addStorageParam(`${API_URL}/teas`));
+    console.log('Fetching teas from server');
+    const response = await fetch(addStorageParam(`${API_URL}/teas`));
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch teas: ${response.status}`);
+    }
+    
+    const teas = await response.json();
+    console.log('Received teas from server:', teas);
     
     // Update cache
     teaCache = teas;
@@ -89,7 +97,15 @@ export const fetchTeaById = async (id) => {
   }
   
   try {
-    const tea = await apiClient(addStorageParam(`${API_URL}/teas/${id}`));
+    console.log(`Fetching tea by ID: ${id}`);
+    const response = await fetch(addStorageParam(`${API_URL}/teas/${id}`));
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch tea by ID: ${response.status}`);
+    }
+    
+    const tea = await response.json();
+    console.log('Received tea from server:', tea);
     
     // Update the cache if it exists
     if (teaCache) {
@@ -118,14 +134,25 @@ export const fetchTeaByName = async (name) => {
   try {
     // URL encode the name to handle special characters
     const encodedName = encodeURIComponent(name);
+    console.log(`Fetching tea by name: ${name}`);
     
     try {
-      const tea = await apiClient(addStorageParam(`${API_URL}/teas/by-name/${encodedName}`));
+      const response = await fetch(addStorageParam(`${API_URL}/teas/by-name/${encodedName}`));
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Tea not found');
+        }
+        throw new Error(`Failed to fetch tea by name: ${response.status}`);
+      }
+      
+      const tea = await response.json();
+      console.log('Received tea from server:', tea);
       return tea;
     } catch (error) {
       // If 404, try to create a basic tea object
-      if (error.status === 404) {
-        console.log(`Tea not found by name: ${name}`);
+      if (error.message === 'Tea not found') {
+        console.log(`Tea not found by name: ${name}, creating new tea`);
         
         // Create a basic tea object
         const basicTea = {
@@ -179,6 +206,7 @@ export const createTea = async (teaData) => {
     if (teaCache) {
       const existingTea = teaCache.find(tea => tea.name.toLowerCase() === teaData.name.toLowerCase());
       if (existingTea) {
+        console.log('Found existing tea in cache:', existingTea);
         return existingTea;
       }
     }
@@ -188,14 +216,23 @@ export const createTea = async (teaData) => {
       teaData.vendor = normalizeVendorName(teaData.vendor);
     }
     
+    console.log('Sending create tea request with data:', teaData);
+    
     // Create tea using the API
-    const newTea = await apiClient(addStorageParam(`${API_URL}/teas`), {
+    const response = await fetch(addStorageParam(`${API_URL}/teas`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(teaData),
     });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to create tea: ${response.status}`);
+    }
+    
+    const newTea = await response.json();
+    console.log('Created tea response:', newTea);
     
     // Log the operation
     logTeaOperation('create', teaData, newTea);
@@ -227,13 +264,17 @@ export const createTea = async (teaData) => {
       return existingTea;
     }
     
+    // Generate a unique ID for local storage
+    const newId = `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    
     // Create new tea with ID
     const newTea = {
       ...teaData,
-      id: Date.now().toString(),
+      id: newId,
       created: new Date().toISOString()
     };
     
+    console.log('Creating tea in local storage:', newTea);
     teas.push(newTea);
     localStorage.setItem('teaCollection', JSON.stringify(teas));
     
@@ -259,13 +300,20 @@ export const updateTea = async (id, teaData) => {
     console.log(`Updating tea ${id} with data:`, dataToUpdate);
     
     // Update tea using the API
-    const updatedTea = await apiClient(addStorageParam(`${API_URL}/teas/${id}`), {
+    const response = await fetch(addStorageParam(`${API_URL}/teas/${id}`), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(dataToUpdate),
     });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to update tea: ${response.status}`);
+    }
+    
+    const updatedTea = await response.json();
+    console.log('Updated tea response:', updatedTea);
     
     // Log the operation
     logTeaOperation('update', dataToUpdate, updatedTea);
@@ -306,6 +354,7 @@ export const updateTea = async (id, teaData) => {
       updated: new Date().toISOString()
     };
     
+    console.log('Updating tea in local storage:', updatedTea);
     teas[index] = updatedTea;
     localStorage.setItem('teaCollection', JSON.stringify(teas));
     
@@ -316,10 +365,16 @@ export const updateTea = async (id, teaData) => {
 // Delete a tea
 export const deleteTea = async (id) => {
   try {
+    console.log(`Deleting tea with ID: ${id}`);
+    
     // Delete tea using the API
-    await apiClient(addStorageParam(`${API_URL}/teas/${id}`), {
+    const response = await fetch(addStorageParam(`${API_URL}/teas/${id}`), {
       method: 'DELETE',
     });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to delete tea: ${response.status}`);
+    }
     
     // Update the cache
     if (teaCache) {
@@ -372,10 +427,12 @@ export const normalizeVendorName = (vendorName) => {
       
       // Check if this is a vendor alias
       for (const vendor of vendors) {
-        const isAlias = vendor.aliases.some(alias => 
-          alias.toLowerCase() === lowercaseName
-        );
-        if (isAlias) return vendor.name;
+        if (Array.isArray(vendor.aliases)) {
+          const isAlias = vendor.aliases.some(alias => 
+            alias.toLowerCase() === lowercaseName
+          );
+          if (isAlias) return vendor.name;
+        }
       }
     } catch (error) {
       console.error('Error parsing stored vendors:', error);
