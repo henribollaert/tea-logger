@@ -14,11 +14,14 @@
     "react-scripts": "^5.0.1",
     "web-vitals": "^2.1.4"
   },
+  "main": "electron-main.js",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "electron-dev": "concurrently \"BROWSER=none npm start\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron-pack": "electron-builder"
   },
   "eslintConfig": {
     "extends": [
@@ -37,5 +40,11 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8",
+    "wait-on": "^8.0.2"
   }
 }
