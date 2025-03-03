@@ -1,15 +1,20 @@
-import React, { useState, useEffect } from 'react';
+// src/components/TeaCollection.js
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, X, Plus, Trash, Clock } from 'lucide-react';
-import { fetchSessions, fetchDashboardData } from '../api';
-import { fetchTeas, createTea, updateTea, deleteTea, fetchTeaById } from '../teaApi';
+import { ArrowLeft, Search, X, Plus } from 'lucide-react';
+import { fetchDashboardData } from '../api';
+import { updateTea, createTea, deleteTea } from '../teaApi';
 import './TeaCollection.css';
+
+// Import our new components
+import TeaCard from './common/TeaCard';
+import TeaForm from './common/TeaForm';
+import ConfirmationModal from './common/ConfirmationModal';
 
 const TeaCollection = () => {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [teas, setTeas] = useState([]);
-  const [filteredTeas, setFilteredTeas] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -28,68 +33,62 @@ const TeaCollection = () => {
     notes: ''
   });
 
-    // Load both teas and sessions
-    useEffect(() => {
-      const loadData = async () => {
-        setIsLoading(true);
-        try {
-          // Load data from consolidated endpoint
-          const dashboardData = await fetchDashboardData();
-          
-          // Set sessions
-          setSessions(dashboardData.sessions);
-          
-          // Create teas with their stats
-          const teasWithStats = dashboardData.teas.map(tea => {
-            const teaId = tea.id.toString();
-            const stats = dashboardData.teaStats[teaId] || {
-              sessionCount: 0,
-              lastBrewed: null,
-              sessionIds: []
-            };
-            
-            // Find sessions for this tea
-            const teaSessions = stats.sessionIds
-              .map(sessionId => dashboardData.sessions.find(s => s.id.toString() === sessionId.toString()))
-              .filter(Boolean);
-            
-            return {
-              ...tea,
-              sessionCount: stats.sessionCount,
-              lastBrewed: stats.lastBrewed,
-              sessions: teaSessions
-            };
-          });
-          
-          setTeas(teasWithStats);
-          setFilteredTeas(teasWithStats);
-          
-          // Check if we need to focus on a specific tea
-          const focusTeaId = localStorage.getItem('focusTeaId');
-          const focusTeaName = localStorage.getItem('focusTeaName');
-          
-          if (focusTeaId) {
-            setExpandedTea(focusTeaId);
-            localStorage.removeItem('focusTeaId');
-          } else if (focusTeaName) {
-            const focusTea = teasWithStats.find(t => t.name === focusTeaName);
-            if (focusTea) {
-              setExpandedTea(focusTea.id);
-            }
-            localStorage.removeItem('focusTeaName');
-          }
-        } catch (error) {
-          console.error('Error loading data:', error);
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      
-      loadData();
-    }, []);
-
-  // Filter teas based on search and type
   useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const dashboardData = await fetchDashboardData();
+        
+        setSessions(dashboardData.sessions);
+        
+        const teasWithStats = dashboardData.teas.map(tea => {
+          const teaId = tea.id.toString();
+          const stats = dashboardData.teaStats[teaId] || {
+            sessionCount: 0,
+            lastBrewed: null,
+            sessionIds: []
+          };
+          
+          const teaSessions = stats.sessionIds
+            .map(sessionId => dashboardData.sessions.find(s => s.id.toString() === sessionId.toString()))
+            .filter(Boolean);
+          
+          return {
+            ...tea,
+            sessionCount: stats.sessionCount,
+            lastBrewed: stats.lastBrewed,
+            sessions: teaSessions
+          };
+        });
+        
+        setTeas(teasWithStats);
+        
+        // Check for focus tea
+        const focusTeaId = localStorage.getItem('focusTeaId');
+        const focusTeaName = localStorage.getItem('focusTeaName');
+        
+        if (focusTeaId) {
+          setExpandedTea(focusTeaId);
+          localStorage.removeItem('focusTeaId');
+        } else if (focusTeaName) {
+          const focusTea = teasWithStats.find(t => t.name === focusTeaName);
+          if (focusTea) {
+            setExpandedTea(focusTea.id);
+          }
+          localStorage.removeItem('focusTeaName');
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadData();
+  }, []);
+
+  // Memoize filtered teas to prevent recalculation on every render
+  const filteredTeas = useMemo(() => {
     let result = [...teas];
     
     if (filterType) {
@@ -104,35 +103,36 @@ const TeaCollection = () => {
       );
     }
     
-    setFilteredTeas(result);
+    return result;
   }, [teas, searchTerm, filterType]);
 
-  const clearSearch = () => {
-    setSearchTerm('');
-  };
-
-  const getTeaTypes = () => {
+  // Memoize tea types to prevent recalculation
+  const teaTypes = useMemo(() => {
     const types = new Set();
     teas.forEach(tea => {
       if (tea.type) types.add(tea.type);
     });
     return ['', ...Array.from(types)].sort();
-  };
+  }, [teas]);
 
-  const handleTeaChange = (e) => {
+  // Use callbacks for event handlers
+  const clearSearch = useCallback(() => {
+    setSearchTerm('');
+  }, []);
+
+  const handleTeaChange = useCallback((e) => {
     const { name, value } = e.target;
     setNewTea(prev => ({
       ...prev,
       [name]: value
     }));
-  };
+  }, []);
 
-  const handleAddTea = async () => {
+  const handleAddTea = useCallback(async () => {
     if (!newTea.name.trim()) return;
     
     try {
-      // Create new tea in collection
-      const createdTea = createTea({
+      const createdTea = await createTea({
         name: newTea.name.trim(),
         type: newTea.type,
         vendor: newTea.vendor,
@@ -140,7 +140,6 @@ const TeaCollection = () => {
         notes: newTea.notes
       });
       
-      // Add to current state with empty session stats
       const teaWithStats = {
         ...createdTea,
         sessionCount: 0,
@@ -167,9 +166,9 @@ const TeaCollection = () => {
       setNotification('Error adding tea to collection');
       setTimeout(() => setNotification(''), 3000);
     }
-  };
+  }, [newTea]);
 
-  const handleEditTea = (tea) => {
+  const handleEditTea = useCallback((tea) => {
     setEditingTeaId(tea.id);
     setNewTea({
       id: tea.id,
@@ -179,13 +178,12 @@ const TeaCollection = () => {
       year: tea.year || '',
       notes: tea.notes || ''
     });
-  };
+  }, []);
 
-  const handleUpdateTea = async () => {
+  const handleUpdateTea = useCallback(async () => {
     if (!newTea.name.trim() || !editingTeaId) return;
     
     try {
-      // Update tea in collection
       const updatedTea = await updateTea(editingTeaId, {
         name: newTea.name.trim(),
         type: newTea.type,
@@ -195,21 +193,7 @@ const TeaCollection = () => {
       });
       
       if (updatedTea) {
-        // Update in current state while preserving session stats
         setTeas(prev => prev.map(tea => {
-          if (tea.id === editingTeaId) {
-            return {
-              ...updatedTea,
-              sessionCount: tea.sessionCount || 0,
-              lastBrewed: tea.lastBrewed,
-              sessions: tea.sessions || []
-            };
-          }
-          return tea;
-        }));
-        
-        // Make sure to update filteredTeas as well
-        setFilteredTeas(prev => prev.map(tea => {
           if (tea.id === editingTeaId) {
             return {
               ...updatedTea,
@@ -249,9 +233,9 @@ const TeaCollection = () => {
         setNotification('');
       }, 3000);
     }
-  };
+  }, [newTea, editingTeaId]);
 
-  const handleCancelEdit = () => {
+  const handleCancelEdit = useCallback(() => {
     setEditingTeaId(null);
     setNewTea({
       id: null,
@@ -261,23 +245,21 @@ const TeaCollection = () => {
       year: '',
       notes: ''
     });
-  };
+  }, []);
 
-  const handleDeleteClick = (e, tea) => {
-    e.stopPropagation(); // Prevent triggering the card click
+  const handleDeleteClick = useCallback((e, tea) => {
+    e.stopPropagation();
     setTeaToDelete(tea);
     setShowDeleteConfirm(true);
-  };
+  }, []);
 
-  const handleDeleteTea = async () => {
+  const handleDeleteTea = useCallback(async () => {
     if (!teaToDelete) return;
     
     try {
-      // Delete tea from collection
-      const success = deleteTea(teaToDelete.id);
+      const success = await deleteTea(teaToDelete.id);
       
       if (success) {
-        // Remove from current state
         setTeas(prev => prev.filter(tea => tea.id !== teaToDelete.id));
         setShowDeleteConfirm(false);
         setTeaToDelete(null);
@@ -292,20 +274,23 @@ const TeaCollection = () => {
       setNotification('Error deleting tea');
       setTimeout(() => setNotification(''), 3000);
     }
-  };
+  }, [teaToDelete]);
 
-  const toggleSessionHistory = (teaId) => {
-    if (expandedTea === teaId) {
-      setExpandedTea(null);
+  const toggleSessionHistory = useCallback((teaId) => {
+    setExpandedTea(prevId => prevId === teaId ? null : teaId);
+  }, []);
+
+  const handleSessionClick = useCallback((session) => {
+    navigate(`/session/${session.id}`);
+  }, [navigate]);
+
+  const handleTeaCardClick = useCallback((tea) => {
+    if (!expandedTea) {
+      handleEditTea(tea);
     } else {
-      setExpandedTea(teaId);
+      toggleSessionHistory(tea.id);
     }
-  };
-
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
-  };
+  }, [expandedTea, handleEditTea, toggleSessionHistory]);
 
   return (
     <div className="app-container">
@@ -339,98 +324,13 @@ const TeaCollection = () => {
       
         {/* Add/Edit Tea Form */}
         {(isAddingTea || editingTeaId) && (
-          <div className="tea-form">
-            <h3 className="form-title">
-              {editingTeaId ? 'Edit Tea' : 'Add New Tea'}
-            </h3>
-            
-            <div className="form-group">
-              <label htmlFor="name">Tea Name*</label>
-              <input
-                type="text"
-                id="name"
-                name="name"
-                value={newTea.name}
-                onChange={handleTeaChange}
-                className="form-input"
-                required
-              />
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="type">Tea Type</label>
-              <select
-                id="type"
-                name="type"
-                value={newTea.type}
-                onChange={handleTeaChange}
-                className="form-select"
-              >
-                <option value="">Select a type</option>
-                <option value="White">White</option>
-                <option value="Green">Green</option>
-                <option value="Yellow">Yellow</option>
-                <option value="Oolong">Oolong</option>
-                <option value="Black">Black</option>
-                <option value="Sheng Puer">Sheng Puer</option>
-                <option value="Shu Puer">Shu Puer</option>
-                <option value="Herbal">Herbal</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="vendor">Vendor</label>
-              <input
-                type="text"
-                id="vendor"
-                name="vendor"
-                value={newTea.vendor}
-                onChange={handleTeaChange}
-                className="form-input"
-              />
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="year">Year/Age</label>
-              <input
-                type="text"
-                id="year"
-                name="year"
-                value={newTea.year}
-                onChange={handleTeaChange}
-                className="form-input"
-              />
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="notes">Notes</label>
-              <textarea
-                id="notes"
-                name="notes"
-                value={newTea.notes}
-                onChange={handleTeaChange}
-                className="form-textarea"
-                rows="3"
-              ></textarea>
-            </div>
-            
-            <div className="form-actions">
-              <button 
-                className="cancel-button"
-                onClick={editingTeaId ? handleCancelEdit : () => setIsAddingTea(false)}
-              >
-                Cancel
-              </button>
-              <button 
-                className="save-button"
-                onClick={editingTeaId ? handleUpdateTea : handleAddTea}
-                disabled={!newTea.name.trim()}
-              >
-                {editingTeaId ? 'Update Tea' : 'Add Tea'}
-              </button>
-            </div>
-          </div>
+          <TeaForm
+            tea={newTea}
+            onChange={handleTeaChange}
+            onSave={editingTeaId ? handleUpdateTea : handleAddTea}
+            onCancel={editingTeaId ? handleCancelEdit : () => setIsAddingTea(false)}
+            isEditing={!!editingTeaId}
+          />
         )}
         
         {/* Filters and Search */}
@@ -465,7 +365,7 @@ const TeaCollection = () => {
                 className="filter-select"
               >
                 <option value="">All Types</option>
-                {getTeaTypes().map(type => (
+                {teaTypes.map(type => (
                   type && <option key={type} value={type}>{type}</option>
                 ))}
               </select>
@@ -485,96 +385,16 @@ const TeaCollection = () => {
             </div>
           ) : (
             filteredTeas.map(tea => (
-              <div key={tea.id} className="tea-card" id={`tea-${tea.id}`}>
-                <div 
-                  className="tea-card-main"
-                  onClick={() => {
-                    if (!expandedTea) {
-                      handleEditTea(tea);
-                    } else {
-                      toggleSessionHistory(tea.id);
-                    }
-                  }}
-                >
-                  <div className="tea-info">
-                    <h3 className="tea-name">{tea.name}</h3>
-                    <div className="tea-details">
-                      {tea.type && <span key={`type-${tea.id}`} className="tea-tag">{tea.type}</span>}
-                      {tea.vendor && <span key={`vendor-${tea.id}`} className="tea-tag">{tea.vendor}</span>}
-                      {tea.year && <span key={`year-${tea.id}`} className="tea-tag">{tea.year}</span>}
-                    </div>
-                    {tea.sessionCount > 0 && (
-                      <div className="tea-stats">
-                        <span 
-                          className="session-count clickable-stat"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleSessionHistory(tea.id);
-                          }}
-                          title="View all brewing sessions"
-                        >
-                          <span className="stat-icon">📋</span> {tea.sessionCount} session{tea.sessionCount !== 1 ? 's' : ''}
-                        </span>
-                        {tea.lastBrewed && tea.sessions && tea.sessions.length > 0 && (
-                          <span 
-                            className="last-brewed clickable-stat"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // Navigate to the most recent session
-                              navigate(`/session/${tea.sessions[0].id}`);
-                            }}
-                            title="Go to most recent session"
-                          >
-                            <span className="stat-icon">🕒</span> Last: {formatDate(tea.lastBrewed)}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    {tea.notes && <p className="tea-notes">{tea.notes}</p>}
-                  </div>
-                </div>
-                <button 
-                  className="card-delete-button" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteClick(e, tea);
-                  }}
-                  aria-label="Delete tea"
-                >
-                  <Trash size={16} />
-                </button>
-                
-                {/* Session History */}
-                {expandedTea === tea.id && (
-                  <div className="session-history">
-                    <h4 className="history-title">Brewing History</h4>
-                    {tea.sessions && tea.sessions.length > 0 ? (
-                      <div className="session-list">
-                        {tea.sessions.map(session => (
-                          <div 
-                            key={session.id} 
-                            className="history-session"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/session/${session.id}`);
-                            }}
-                          >
-                            <div className="session-date">
-                              <Clock size={12} />
-                              <span>{formatDate(session.timestamp)}</span>
-                            </div>
-                            {session.notes && (
-                              <p className="session-history-notes">{session.notes}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="empty-history">No brewing sessions recorded yet.</p>
-                    )}
-                  </div>
-                )}
-              </div>
+              <TeaCard
+                key={tea.id}
+                tea={tea}
+                onEditClick={() => handleEditTea(tea)}
+                onDeleteClick={handleDeleteClick}
+                onSessionHistoryToggle={toggleSessionHistory}
+                isExpanded={expandedTea === tea.id}
+                onSessionClick={handleSessionClick}
+                onTeaCardClick={() => handleTeaCardClick(tea)}
+              />
             ))
           )}
         </div>
@@ -582,31 +402,15 @@ const TeaCollection = () => {
       
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && teaToDelete && (
-        <div className="modal-backdrop">
-          <div className="modal-container">
-            <h3 className="modal-title">Delete Tea</h3>
-            <p className="modal-message">
-              Are you sure you want to delete "{teaToDelete.name}" from your collection? This action cannot be undone.
-            </p>
-            <div className="modal-actions">
-              <button 
-                className="cancel-button"
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  setTeaToDelete(null);
-                }}
-              >
-                Cancel
-              </button>
-              <button 
-                className="delete-button"
-                onClick={handleDeleteTea}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmationModal
+          title="Delete Tea"
+          message={`Are you sure you want to delete "${teaToDelete.name}" from your collection? This action cannot be undone.`}
+          onConfirm={handleDeleteTea}
+          onCancel={() => {
+            setShowDeleteConfirm(false);
+            setTeaToDelete(null);
+          }}
+        />
       )}
     </div>
   );

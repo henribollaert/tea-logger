@@ -1,14 +1,17 @@
-import React, { useState, useEffect } from 'react';
+// src/components/AllSessions.js
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Search, X, Trash } from 'lucide-react';
+import { ArrowLeft, Search, X } from 'lucide-react';
 import { fetchSessions, deleteSession } from '../api';
-import {fetchTeaById, fetchTeaByName} from '../teaApi';
 import './AllSessions.css';
+
+// Import our common components
+import SessionCard from './common/SessionCard';
+import ConfirmationModal from './common/ConfirmationModal';
 
 const AllSessions = () => {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
-  const [filteredSessions, setFilteredSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -22,12 +25,10 @@ const AllSessions = () => {
       setIsLoading(true);
       try {
         const data = await fetchSessions();
-        // Sort by date descending by default
         const sortedData = [...data].sort((a, b) => 
           new Date(b.timestamp) - new Date(a.timestamp)
         );
         setSessions(sortedData);
-        setFilteredSessions(sortedData);
       } catch (error) {
         console.error('Error loading sessions:', error);
       } finally {
@@ -38,8 +39,17 @@ const AllSessions = () => {
     loadSessions();
   }, []);
 
-  useEffect(() => {
-    // Filter and sort sessions whenever filters or sort order changes
+  // Memoize tea types to prevent recalculation
+  const teaTypes = useMemo(() => {
+    const types = new Set();
+    sessions.forEach(session => {
+      if (session.type) types.add(session.type);
+    });
+    return ['', ...Array.from(types)].sort();
+  }, [sessions]);
+
+  // Memoize filtered and sorted sessions
+  const filteredSessions = useMemo(() => {
     let result = [...sessions];
     
     // Apply type filter
@@ -68,36 +78,27 @@ const AllSessions = () => {
       result.sort((a, b) => b.name.localeCompare(a.name));
     }
     
-    setFilteredSessions(result);
+    return result;
   }, [sessions, searchTerm, filterType, sortBy]);
 
-  const clearSearch = () => {
+  const clearSearch = useCallback(() => {
     setSearchTerm('');
-  };
+  }, []);
 
-  const getTeaTypes = () => {
-    const types = new Set();
-    sessions.forEach(session => {
-      if (session.type) types.add(session.type);
-    });
-    return ['', ...Array.from(types)].sort();
-  };
-  
-  const handleDeleteClick = (e, session) => {
+  const handleDeleteClick = useCallback((e, session) => {
     e.stopPropagation(); // Prevent navigating to session details
     setSessionToDelete(session);
     setShowDeleteConfirm(true);
-  };
+  }, []);
 
-  const handleDeleteSession = async () => {
+  const handleDeleteSession = useCallback(async () => {
     if (!sessionToDelete) return;
     
     try {
       await deleteSession(sessionToDelete.id);
       
       // Update sessions list
-      const updatedSessions = sessions.filter(s => s.id !== sessionToDelete.id);
-      setSessions(updatedSessions);
+      setSessions(prev => prev.filter(s => s.id !== sessionToDelete.id));
       
       // Show notification
       setNotification('Session deleted successfully');
@@ -110,29 +111,11 @@ const AllSessions = () => {
       setShowDeleteConfirm(false);
       setSessionToDelete(null);
     }
-  };
+  }, [sessionToDelete]);
 
-  // Updated code for your click handler
-  const handleSessionClick = async (session) => {
-    try {
-      // First await the tea data
-      let tea;
-      if (session.teaId) {
-        tea = await fetchTeaById(session.teaId);
-      } else {
-        tea = await fetchTeaByName(session.name);
-      }
-      
-      // Then navigate with the resolved data
-      navigate(`/session/${session.id}`, { 
-        state: { tea } 
-      });
-    } catch (error) {
-      console.error('Error fetching tea data:', error);
-      // Navigate anyway, without the tea data
-      navigate(`/session/${session.id}`);
-    }
-  };
+  const handleSessionClick = useCallback((session) => {
+    navigate(`/session/${session.id}`);
+  }, [navigate]);
 
   return (
     <div className="app-container">
@@ -186,7 +169,7 @@ const AllSessions = () => {
                 className="filter-select"
               >
                 <option value="">All Types</option>
-                {getTeaTypes().map(type => (
+                {teaTypes.map(type => (
                   type && <option key={type} value={type}>{type}</option>
                 ))}
               </select>
@@ -221,36 +204,12 @@ const AllSessions = () => {
             </div>
           ) : (
             filteredSessions.map(session => (
-              <div 
-                key={session.id} 
-                className="session-card"
-                onClick={() => handleSessionClick(session)}
-              >
-                <div className="session-header">
-                  <div>
-                    <h3 className="session-title">{session.name}</h3>
-                    <div className="session-meta">
-                      {session.vendor && <span className="session-vendor">{session.vendor}</span>}
-                      {session.type && <span className="session-type">{session.type}</span>}
-                      {session.age && <span className="session-age">{session.age}</span>}
-                    </div>
-                  </div>
-                  <div className="session-timestamp">
-                    <Clock size={12} className="timestamp-icon" />
-                    {new Date(session.timestamp).toLocaleDateString()}
-                  </div>
-                </div>
-                {session.notes && (
-                  <p className="session-notes">{session.notes}</p>
-                )}
-                <button
-                  className="card-delete-button"
-                  onClick={(e) => handleDeleteClick(e, session)}
-                  aria-label="Delete session"
-                >
-                  <Trash size={16} />
-                </button>
-              </div>
+              <SessionCard
+                key={session.id}
+                session={session}
+                onSessionClick={handleSessionClick}
+                onDeleteClick={handleDeleteClick}
+              />
             ))
           )}
         </div>
@@ -258,31 +217,15 @@ const AllSessions = () => {
       
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && sessionToDelete && (
-        <div className="modal-backdrop">
-          <div className="modal-container">
-            <h3 className="modal-title">Delete Session</h3>
-            <p className="modal-message">
-              Are you sure you want to delete this session for "{sessionToDelete.name}"? This action cannot be undone.
-            </p>
-            <div className="modal-actions">
-              <button 
-                className="cancel-button"
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  setSessionToDelete(null);
-                }}
-              >
-                Cancel
-              </button>
-              <button 
-                className="delete-button"
-                onClick={handleDeleteSession}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmationModal
+          title="Delete Session"
+          message={`Are you sure you want to delete this session for "${sessionToDelete.name}"? This action cannot be undone.`}
+          onConfirm={handleDeleteSession}
+          onCancel={() => {
+            setShowDeleteConfirm(false);
+            setSessionToDelete(null);
+          }}
+        />
       )}
     </div>
   );
